@@ -101,10 +101,6 @@
     ctx.fillStyle = '#87CEEB';
     ctx.fillRect(0,0, world.w, world.h);
 
-    // draw ground area background (brown)
-    ctx.fillStyle = '#8B5A2B';
-    ctx.fillRect(0, groundTop, world.w, world.h - groundTop);
-
     // draw ground grid
     if(groundGrid){
       for(let y=0;y<rows;y++){
@@ -172,8 +168,10 @@
         if(sandGrid[idx] === 1){ sandGrid[idx] = 0; removed++; }
       }
     }
-    heldSand += removed;
-    ui.sandCount.textContent = heldSand;
+    if(removed){
+      heldSand += removed;
+      if(ui.sandCount) ui.sandCount.textContent = heldSand;
+    }
   }
 
   // Drop sand into grid (places sand cells; physics will settle them)
@@ -217,7 +215,7 @@
       world.camY = Math.max(0, panStart.camY - dy);
     } else {
       const rect = canvas.getBoundingClientRect();
-      const px = e.clientClientX ? e.clientClientX - rect.left : e.clientX - rect.left; const py = e.clientY - rect.top;
+      const px = e.clientX - rect.left; const py = e.clientY - rect.top;
       if(mode === 'mine') mineAt(px, py, 8);
       if(mode === 'collect') collectAt(px, py, 8);
       if(mode === 'drop') dropAt(px, py, 8);
