@@ -3,6 +3,15 @@
   const ctx = canvas.getContext('2d', { alpha: false });
   let DPR = Math.max(1, window.devicePixelRatio || 1);
 
+  // Pixel sand config
+  const SAND_PIXEL = 4; // change to 2/3/4 to taste
+  const SAND_COLORS = ['#C2A86F', '#D6B875', '#BFA46A'];
+
+  // Disable smoothing so pixels stay crisp when scaled
+  ctx.imageSmoothingEnabled = false;
+  if (typeof ctx.webkitImageSmoothingEnabled !== 'undefined') ctx.webkitImageSmoothingEnabled = false;
+  canvas.style.imageRendering = 'pixelated';
+
   function resize() {
     DPR = Math.max(1, window.devicePixelRatio || 1);
     const rect = canvas.getBoundingClientRect();
@@ -161,8 +170,10 @@
         y: y + (Math.random()-0.5)*6,
         vx: (Math.random()-0.5)*0.4,
         vy: Math.random()*0.5,
-        r: 3 + Math.random()*2,
-        color: ['#f2d28b','#ffd88a','#f8c86a'][Math.floor(Math.random()*3)]
+        // size used for pixel rendering
+        size: SAND_PIXEL + Math.floor(Math.random()*2),
+        seed: Math.floor(Math.random()*1000),
+        color: SAND_COLORS[Math.floor(Math.random()*SAND_COLORS.length)]
       });
     }
   }
@@ -293,12 +304,15 @@
       ctx.fillText('Processor', c.x + 8, c.y + 18);
     }
 
-    // particles
+    // particles - draw as chunky pixel squares
     for(const p of particles){
-      ctx.beginPath();
-      ctx.fillStyle = p.color;
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
-      ctx.fill();
+      const size = p.size || SAND_PIXEL;
+      const x = Math.floor(p.x - size/2);
+      const y = Math.floor(p.y - size/2);
+      // simple dithering by position+seed
+      const shadeIndex = Math.abs((Math.floor((p.x + p.y) / SAND_PIXEL) + (p.seed||0))) % SAND_COLORS.length;
+      ctx.fillStyle = SAND_COLORS[shadeIndex];
+      ctx.fillRect(x, y, size, size);
     }
 
     // UI hint if placing
@@ -346,7 +360,7 @@
   window.addEventListener('keydown', e=>{
     if(e.key === ' ') spawnSand(world.camX + world.w*0.2, 60, 20);
     if(e.key === 'c') {
-      if(coins >= costs.conveyor){ coins -= costs.conveyor; conveyors.push({x: world.camX + world.w*0.5 - 60, y: world.camY + world.h - 80, w: 120, h:18, dir: -1}); ui.coins.textContent = coins; save(); }
+      if(coins >= costs.conveyor){ coins -= costs.conveyor; conveyors.push({x: world.camX + world.w*0.5 - 60, y: world.camY + world.h - 80, w: 120, h:18, dir: -1}); ui.coins.textContent = coins; /* truncated in original */ }
     }
     if(e.key === 'a'){
       if(coins >= costs.auto){ coins -= costs.auto; autoProcessor = true; ui.coins.textContent = coins; save(); }
