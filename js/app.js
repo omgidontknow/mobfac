@@ -4,10 +4,28 @@
   let DPR = Math.max(1, window.devicePixelRatio || 1);
 
   // Pixel sand config
-  const SAND_PIXEL = 4; // change to 2/3/4 to taste
-  const SAND_COLORS = ['#C2A86F', '#D6B875', '#BFA46A'];
+  const SAND_PIXEL = 2; // small as feasible while staying performant
+  const SAND_COLORS = ['#E3C58A', '#D8B76D', '#C9A15A'];
 
-  // Disable smoothing so pixels stay crisp when scaled
+  // Grid (cells: 0 empty, 1 sand)
+  let cols = 0, rows = 0;
+  let grid = null; // Uint8Array(cols*rows)
+
+  // World
+  let world = { w:0, h:0, camX:0, camY:0 };
+  let groundTop = 0; // y coordinate (in px) where ground starts
+
+  // Inventory
+  let heldSand = 0;
+  const ui = { sandCount: document.getElementById('sandCount'), collectBtn: document.getElementById('collectBtn'), dropBtn: document.getElementById('dropBtn') };
+
+  // Interaction modes: 'pan'|'collect'|'drop'
+  let mode = 'pan';
+  function setMode(m){ mode = m; ui.collectBtn.classList.toggle('active', m==='collect'); ui.dropBtn.classList.toggle('active', m==='drop'); }
+  ui.collectBtn.addEventListener('click', ()=> setMode(mode==='collect'?'pan':'collect'));
+  ui.dropBtn.addEventListener('click', ()=> setMode(mode==='drop'?'pan':'drop'));
+
+  // Disable smoothing
   ctx.imageSmoothingEnabled = false;
   if (typeof ctx.webkitImageSmoothingEnabled !== 'undefined') ctx.webkitImageSmoothingEnabled = false;
   canvas.style.imageRendering = 'pixelated';
@@ -18,356 +36,174 @@
     canvas.width = Math.floor(rect.width * DPR);
     canvas.height = Math.floor(rect.height * DPR);
     ctx.setTransform(DPR,0,0,DPR,0,0);
+    world.w = canvas.width / DPR; world.h = canvas.height / DPR;
+    // ground is bottom ~ 30% of screen by height
+    groundTop = Math.floor(world.h * 0.6);
+    initGrid();
   }
   window.addEventListener('resize', resize);
-  // ensure the canvas has a size initially
-  function initSize(){
-    const rect = canvas.getBoundingClientRect();
-    if(rect.width === 0 || rect.height === 0){
-      // give the canvas a default size if not yet laid out
-      canvas.style.width = '100%';
-      canvas.style.height = '100%';
-    }
-    resize();
-  }
+  // initial
+  function initSize(){ const rect = canvas.getBoundingClientRect(); if(rect.width===0||rect.height===0){ canvas.style.width='100%'; canvas.style.height='100%'; } resize(); }
   initSize();
 
-  // Game world coords scale with canvas size
-  let world = {
-    w: canvas.width / DPR,
-    h: canvas.height / DPR,
-    camX: 0, camY: 0, scale:1
-  };
-
-  function updateWorldSize(){ world.w = canvas.width/DPR; world.h = canvas.height/DPR; }
-  updateWorldSize();
-
-  // Entities
-  const particles = []; // sand particles
-  const conveyors = []; // rectangles that nudge sand horizontally
-  const collectors = []; // processor area(s)
-  let sandCount = 0, coins = 0;
-  let placingConveyor = false;
-  let autoProcessor = false;
-
-  // Settings / progression
-  let costs = { conveyor:50, auto:200 };
-  const ui = {
-    coins: document.getElementById('coins'),
-    sandCount: document.getElementById('sandCount'),
-    buyConveyor: document.getElementById('buyConveyor'),
-    buyAuto: document.getElementById('buyAuto')
-  };
-
-  function save() {
-    try{
-      localStorage.setItem('sandfactory_v1', JSON.stringify({coins,sandCount,conveyors,collectors,autoProcessor}));
-    }catch(e){ /* ignore */ }
-  }
-  function load(){
-    const s = localStorage.getItem('sandfactory_v1');
-    if(!s) {
-      // create a default collector (processor) on the right side
-      collectors.push({x: (world.w-140), y: world.h - 110, w:120, h:80, rate:1000, last:0});
-      return;
-    }
-    try {
-      const obj = JSON.parse(s);
-      coins = obj.coins||0; sandCount = obj.sandCount||0; autoProcessor = !!obj.autoProcessor;
-      // conveyors and collectors are simple shapes; if present, keep them
-      if(Array.isArray(obj.conveyors)) obj.conveyors.forEach(c => conveyors.push(c));
-      if(Array.isArray(obj.collectors)) obj.collectors.forEach(c => collectors.push(c));
-    } catch(e){}
-  }
-  load();
-  ui.coins.textContent = coins;
-  ui.sandCount.textContent = sandCount;
-
-  // Input handlers (touch-friendly)
-  let isPointerDown = false, lastPointer = null, dragging = false;
-  let panStart = null;
-
-  function screenToWorld(sx, sy){
-    return { x: sx + world.camX, y: sy + world.camY };
-  }
-
-  canvas.addEventListener('pointerdown', e=>{
-    canvas.setPointerCapture(e.pointerId);
-    isPointerDown = true;
-    lastPointer = {x:e.clientX, y:e.clientY};
-    panStart = {x:e.clientX, y:e.clientY, camX: world.camX, camY: world.camY};
-  });
-
-  canvas.addEventListener('pointermove', e=>{
-    if(!isPointerDown) return;
-    const dx = e.clientX - panStart.x;
-    const dy = e.clientY - panStart.y;
-    if(Math.hypot(dx,dy) > 8) dragging = true;
-    if(dragging) {
-      world.camX = Math.max(0, panStart.camX - dx);
-      world.camY = Math.max(0, panStart.camY - dy);
-    }
-  });
-
-  canvas.addEventListener('pointerup', e=>{
-    canvas.releasePointerCapture(e.pointerId);
-    isPointerDown = false;
-    if(!dragging){
-      const rect = canvas.getBoundingClientRect();
-      const px = e.clientX - rect.left;
-      const py = e.clientY - rect.top;
-      const wpos = screenToWorld(px, py);
-      if(placingConveyor){
-        // place conveyor centered at tap
-        const cw = 120, ch = 18;
-        conveyors.push({x: wpos.x - cw/2, y: wpos.y - ch/2, w: cw, h: ch, dir: -1});
-        placingConveyor = false;
-        save();
-      } else {
-        // spawn a cluster of sand where tapped
-        spawnSand(wpos.x, wpos.y, 12);
-      }
-    }
-    dragging = false;
-    panStart = null;
-  });
-
-  // Buttons
-  document.getElementById('spawnBtn').addEventListener('click', ()=> {
-    spawnSand(world.camX + world.w*0.2, 60, 24);
-  });
-  ui.buyConveyor.addEventListener('click', ()=>{
-    if(coins < costs.conveyor) return flash(ui.buyConveyor);
-    coins -= costs.conveyor;
-    ui.coins.textContent = coins;
-    placingConveyor = true;
-    save();
-  });
-  ui.buyAuto.addEventListener('click', ()=>{
-    if(coins < costs.auto) return flash(ui.buyAuto);
-    coins -= costs.auto;
-    ui.coins.textContent = coins;
-    autoProcessor = true;
-    save();
-  });
-  document.getElementById('reset').addEventListener('click', ()=>{
-    localStorage.removeItem('sandfactory_v1');
-    particles.length = conveyors.length = collectors.length = 0;
-    sandCount = coins = 0; autoProcessor = false; save(); location.reload();
-  });
-
-  function flash(el){
-    el.style.transition = 'transform .08s';
-    el.style.transform = 'scale(0.95)';
-    setTimeout(()=>{ el.style.transform=''; },120);
-  }
-
-  // Spawning particles
-  function spawnSand(x,y,n=6){
-    for(let i=0;i<n;i++){
-      particles.push({
-        x: x + (Math.random()-0.5)*20,
-        y: y + (Math.random()-0.5)*6,
-        vx: (Math.random()-0.5)*0.4,
-        vy: Math.random()*0.5,
-        // size used for pixel rendering
-        size: SAND_PIXEL + Math.floor(Math.random()*2),
-        seed: Math.floor(Math.random()*1000),
-        color: SAND_COLORS[Math.floor(Math.random()*SAND_COLORS.length)]
-      });
+  function initGrid(){
+    cols = Math.ceil(world.w / SAND_PIXEL);
+    rows = Math.ceil((world.h - groundTop) / SAND_PIXEL);
+    grid = new Uint8Array(cols * rows);
+    // fill ground with a natural-looking slope
+    for(let x=0;x<cols;x++){
+      // height varies by perlin-like simple noise
+      const nx = x/cols;
+      const heightPx = Math.floor((0.4 + 0.15 * Math.sin(nx * 12) + 0.08 * Math.cos(nx*7)) * (rows*SAND_PIXEL));
+      const hCells = Math.min(rows, Math.max(1, Math.floor(heightPx / SAND_PIXEL)));
+      for(let y=rows-1; y>=rows-hCells; y--){ grid[y*cols + x] = 1; }
     }
   }
 
-  // Processing: when particle overlaps a collector, collect it (remove and increment sand or coins)
-  function tryCollect(p){
-    for(const c of collectors){
-      if(p.x > c.x && p.x < c.x + c.w && p.y > c.y && p.y < c.y + c.h){
-        // collected into factory
-        // If autoProcessor, convert immediately to coins; else to sand inventory
-        if(autoProcessor){
-          coins += 1;
-          ui.coins.textContent = coins;
-        } else {
-          sandCount += 1;
-          ui.sandCount.textContent = sandCount;
-        }
-        return true;
-      }
-    }
-    return false;
+  function worldToGrid(wx, wy){
+    const gx = Math.floor((wx + world.camX) / SAND_PIXEL);
+    const gy = Math.floor((wy - groundTop) / SAND_PIXEL);
+    return {gx, gy};
   }
+  function gridIndex(gx,gy){ return gy*cols + gx; }
 
-  // Simple physics + conveyors effect
+  // Sand physics (cellular automata falling)
   function step(dt){
-    updateWorldSize();
-    // gravity
-    for(let i = particles.length-1; i >= 0; i--){
-      const p = particles[i];
-      p.vy += 0.12 * dt;
-      p.vx *= 0.999;
-      p.x += p.vx * dt * 60;
-      p.y += p.vy * dt * 60;
-
-      // conveyors apply horizontal nudge when particle overlaps their rect
-      for(const conv of conveyors){
-        if(p.x > conv.x && p.x < conv.x + conv.w && p.y > conv.y - 2 && p.y < conv.y + conv.h + 6){
-          // nudge gently
-          p.vx += conv.dir * 0.12 * dt;
-          // slight lift
-          p.vy -= 0.08 * dt;
+    if(!grid) return;
+    // iterate bottom-up so particles can fall multiple cells per step if space
+    // we'll do one pass moving down where possible
+    for(let y = rows-1; y>=0; y--){
+      for(let x = 0; x<cols; x++){
+        const idx = y*cols + x;
+        if(grid[idx] !== 1) continue;
+        const below = (y+1<rows) ? ( (y+1)*cols + x ) : -1;
+        if(below !== -1 && grid[below] === 0){
+          grid[below] = 1; grid[idx] = 0; continue;
         }
-      }
-
-      // ground collision
-      const groundY = world.h - 14;
-      if(p.y > groundY){
-        p.y = groundY;
-        p.vy *= -0.12;
-        p.vx *= 0.5;
-        if(Math.abs(p.vy) < 0.2) p.vy = 0;
-      }
-
-      // try to collect
-      if(tryCollect(p)){
-        particles.splice(i,1);
-        save();
-        continue;
-      }
-
-      // remove if off-left/right or far below
-      if(p.x < -200 || p.x > world.w + 200 || p.y > world.h + 400){
-        particles.splice(i,1);
-      }
-    }
-
-    // Auto-processor: convert stored sand to coins over time
-    if(autoProcessor && sandCount > 0){
-      // rate: 1 coin per 700ms per processor base
-      for(const c of collectors){
-        const now = performance.now();
-        if(!c.last) c.last = now;
-        if(now - c.last >= 700){
-          const convert = Math.min(1, sandCount);
-          sandCount -= convert;
-          coins += convert;
-          ui.sandCount.textContent = sandCount;
-          ui.coins.textContent = coins;
-          c.last = now;
-          save();
-        }
+        // try down-left or down-right randomly
+        const dir = (Math.random() > 0.5) ? -1 : 1;
+        const nx = x + dir; const ny = y+1;
+        if(nx >=0 && nx < cols && ny < rows && grid[ny*cols + nx] === 0){ grid[ny*cols + nx] = 1; grid[idx]=0; continue; }
+        // try the other side
+        const ox = x - dir;
+        if(ox >=0 && ox < cols && ny < rows && grid[ny*cols + ox] === 0){ grid[ny*cols + ox] = 1; grid[idx]=0; continue; }
       }
     }
   }
 
-  // Draw
   function draw(){
-    ctx.clearRect(0,0,world.w, world.h);
-    // background pattern
-    const grd = ctx.createLinearGradient(0,0,0,world.h);
-    grd.addColorStop(0, '#07121a'); grd.addColorStop(1,'#07131b');
-    ctx.fillStyle = grd;
-    ctx.fillRect(0,0,world.w, world.h);
+    // sky
+    ctx.fillStyle = '#87CEEB';
+    ctx.fillRect(0,0, world.w, world.h);
 
-    ctx.save();
-    ctx.translate(-world.camX, -world.camY);
+    // draw ground background (brown area)
+    ctx.fillStyle = '#8B5A2B';
+    ctx.fillRect(0, groundTop, world.w, world.h - groundTop);
 
-    // ground
-    ctx.fillStyle = '#0b1720';
-    ctx.fillRect(0, world.h - 24, world.w + 200, 40);
-
-    // conveyors
-    for(const conv of conveyors){
-      ctx.fillStyle = '#213240';
-      ctx.fillRect(conv.x, conv.y, conv.w, conv.h);
-      // arrows
-      ctx.fillStyle = '#7da6c1';
-      const step = 20;
-      for(let ax = conv.x + (conv.dir>0?8:conv.w-8); conv.dir>0 ? ax < conv.x+conv.w : ax > conv.x; ax += conv.dir*step){
-        ctx.beginPath();
-        ctx.moveTo(ax, conv.y + conv.h/2 - 6);
-        ctx.lineTo(ax + conv.dir*8, conv.y + conv.h/2);
-        ctx.lineTo(ax, conv.y + conv.h/2 + 6);
-        ctx.closePath();
-        ctx.fill();
+    // draw sand grid
+    if(grid){
+      for(let y=0;y<rows;y++){
+        for(let x=0;x<cols;x++){
+          if(grid[y*cols + x]){
+            const px = x * SAND_PIXEL - world.camX;
+            const py = groundTop + y * SAND_PIXEL - world.camY;
+            // shade variation
+            const shade = SAND_COLORS[(x + y) % SAND_COLORS.length];
+            ctx.fillStyle = shade;
+            ctx.fillRect(Math.floor(px), Math.floor(py), SAND_PIXEL, SAND_PIXEL);
+          }
+        }
       }
     }
 
-    // collectors / processors
-    for(const c of collectors){
-      ctx.fillStyle = '#10232b';
-      ctx.fillRect(c.x, c.y, c.w, c.h);
-      ctx.strokeStyle = '#25536b';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(c.x+1, c.y+1, c.w-2, c.h-2);
-      ctx.fillStyle = '#9fd3ff';
-      ctx.font = '12px system-ui,Segoe UI';
-      ctx.fillText('Processor', c.x + 8, c.y + 18);
-    }
-
-    // particles - draw as chunky pixel squares
-    for(const p of particles){
-      const size = p.size || SAND_PIXEL;
-      const x = Math.floor(p.x - size/2);
-      const y = Math.floor(p.y - size/2);
-      // simple dithering by position+seed
-      const shadeIndex = Math.abs((Math.floor((p.x + p.y) / SAND_PIXEL) + (p.seed||0))) % SAND_COLORS.length;
-      ctx.fillStyle = SAND_COLORS[shadeIndex];
-      ctx.fillRect(x, y, size, size);
-    }
-
-    // UI hint if placing
-    if(placingConveyor){
-      ctx.fillStyle = 'rgba(255,200,120,0.14)';
-      const px = world.camX + world.w/2 - 60;
-      const py = world.camY + world.h/2 - 9;
-      ctx.fillRect(px, py, 120, 18);
-      ctx.fillStyle = '#ffdca5';
-      ctx.font = '13px system-ui';
-      ctx.fillText('Tap to place conveyor', px + 12, py + 13);
-    }
-
+    // HUD overlay (mode)
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.font = '12px system-ui';
+    ctx.fillText('Mode: ' + mode, 12 - world.camX, 18 - world.camY);
     ctx.restore();
   }
+
+  // Mining: remove sand cells under brush and count
+  function mineAt(wx, wy, brushPx=12){
+    if(!grid) return;
+    const {gx, gy} = worldToGrid(wx, wy);
+    const r = Math.max(1, Math.round(brushPx / SAND_PIXEL));
+    let removed = 0;
+    for(let dy = -r; dy <= r; dy++){
+      for(let dx = -r; dx <= r; dx++){
+        const x = gx + dx, y = gy + dy;
+        if(x<0||x>=cols||y<0||y>=rows) continue;
+        const idx = y*cols + x;
+        if(grid[idx] === 1){ grid[idx] = 0; removed++; }
+      }
+    }
+    heldSand += removed;
+    ui.sandCount.textContent = heldSand;
+  }
+
+  // Drop sand into grid (fills the highest empty cell at point)
+  function dropAt(wx, wy, brushPx=12){
+    if(!grid || heldSand <= 0) return;
+    const {gx, gy} = worldToGrid(wx, wy);
+    const r = Math.max(1, Math.round(brushPx / SAND_PIXEL));
+    // attempt to place up to heldSand cells within brush
+    let placed = 0;
+    for(let dy = -r; dy <= r && heldSand>0; dy++){
+      for(let dx = -r; dx <= r && heldSand>0; dx++){
+        const x = gx + dx;
+        if(x<0||x>=cols) continue;
+        // find highest empty cell from top of ground area downwards around gy
+        for(let y = 0; y<rows; y++){
+          const idx = y*cols + x;
+          if(grid[idx] === 0){ grid[idx] = 1; placed++; heldSand--; break; }
+        }
+      }
+    }
+    ui.sandCount.textContent = heldSand;
+  }
+
+  // Pointer interaction: pan when dragging, collect/drop when clicking depending on mode
+  let isPointerDown = false, panStart = null, dragging = false;
+  canvas.addEventListener('pointerdown', e=>{
+    canvas.setPointerCapture(e.pointerId);
+    isPointerDown = true; dragging = false;
+    panStart = {x:e.clientX, y:e.clientY, camX: world.camX, camY: world.camY};
+    const rect = canvas.getBoundingClientRect();
+    const px = e.clientX - rect.left; const py = e.clientY - rect.top;
+    if(mode === 'collect'){ mineAt(px, py, 12); }
+    if(mode === 'drop'){ dropAt(px, py, 12); }
+  });
+  canvas.addEventListener('pointermove', e=>{
+    if(!isPointerDown) return;
+    const dx = e.clientX - panStart.x, dy = e.clientY - panStart.y;
+    if(Math.hypot(dx,dy) > 6) dragging = true;
+    if(dragging && mode === 'pan'){
+      world.camX = Math.max(0, panStart.camX - dx);
+      world.camY = Math.max(0, panStart.camY - dy);
+    } else {
+      // if collecting/dropping while moving
+      const rect = canvas.getBoundingClientRect();
+      const px = e.clientX - rect.left; const py = e.clientY - rect.top;
+      if(mode === 'collect') mineAt(px, py, 8);
+      if(mode === 'drop') dropAt(px, py, 8);
+    }
+  });
+  canvas.addEventListener('pointerup', e=>{ canvas.releasePointerCapture(e.pointerId); isPointerDown=false; dragging=false; panStart=null; });
+
+  // Reset
+  document.getElementById('reset').addEventListener('click', ()=>{ initGrid(); heldSand = 0; ui.sandCount.textContent = heldSand; });
 
   // Main loop
   let last = performance.now();
   function loop(now){
-    const dt = Math.min(1/20, (now - last) / 1000);
-    step(dt * 1); // physics step factor
+    const dt = Math.min(1/30, (now - last) / 1000);
+    // run several small CA steps per frame to make sand flow faster
+    for(let i=0;i<2;i++) step(dt);
     draw();
     last = now;
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
-
-  // create a default conveyor & processor if none exist (for immediate fun)
-  if(collectors.length === 0){
-    collectors.push({x: world.w - 140, y: world.h - 110, w:120, h:80, rate:1000, last:0});
-  }
-  if(conveyors.length === 0){
-    conveyors.push({x: world.w*0.4, y: world.h - 60, w: 220, h: 18, dir: 1});
-  }
-
-  // Responsive: ensure default shapes adapt on resize
-  const ro = new ResizeObserver(()=>{ updateWorldSize(); });
-  ro.observe(canvas);
-
-  // simple guidance: double-tap spawn
-  let lastTap = 0;
-  canvas.addEventListener('dblclick', ()=> spawnSand(world.camX + world.w*0.2, 60, 40));
-
-  // convenience: keyboard shortcuts (desktop)
-  window.addEventListener('keydown', e=>{
-    if(e.key === ' ') spawnSand(world.camX + world.w*0.2, 60, 20);
-    if(e.key === 'c') {
-      if(coins >= costs.conveyor){ coins -= costs.conveyor; conveyors.push({x: world.camX + world.w*0.5 - 60, y: world.camY + world.h - 80, w: 120, h:18, dir: -1}); ui.coins.textContent = coins; /* truncated in original */ }
-    }
-    if(e.key === 'a'){
-      if(coins >= costs.auto){ coins -= costs.auto; autoProcessor = true; ui.coins.textContent = coins; save(); }
-    }
-  });
-
-  // Save periodically
-  setInterval(save, 2000);
 
 })();
