@@ -22,10 +22,10 @@
 
   // Interaction modes: 'pan'|'mine'|'collect'|'drop'
   let mode = 'pan';
-  function setMode(m){ mode = m; ui.mineBtn.classList.toggle('active', m==='mine'); ui.collectBtn.classList.toggle('active', m==='collect'); ui.dropBtn.classList.toggle('active', m==='drop'); }
-  ui.mineBtn.addEventListener('click', ()=> setMode(mode==='mine'?'pan':'mine'));
-  ui.collectBtn.addEventListener('click', ()=> setMode(mode==='collect'?'pan':'collect'));
-  ui.dropBtn.addEventListener('click', ()=> setMode(mode==='drop'?'pan':'drop'));
+  function setMode(m){ mode = m; if(ui.mineBtn) ui.mineBtn.classList.toggle('active', m==='mine'); if(ui.collectBtn) ui.collectBtn.classList.toggle('active', m==='collect'); if(ui.dropBtn) ui.dropBtn.classList.toggle('active', m==='drop'); }
+  if(ui.mineBtn) ui.mineBtn.addEventListener('click', ()=> setMode(mode==='mine'?'pan':'mine'));
+  if(ui.collectBtn) ui.collectBtn.addEventListener('click', ()=> setMode(mode==='collect'?'pan':'collect'));
+  if(ui.dropBtn) ui.dropBtn.addEventListener('click', ()=> setMode(mode==='drop'?'pan':'drop'));
 
   // Disable smoothing
   ctx.imageSmoothingEnabled = false;
@@ -43,7 +43,7 @@
     world.w = canvas.width / DPR; world.h = canvas.height / DPR;
     // virtual world width: 3x viewport or at least 1200px
     world.worldW = Math.max(Math.floor(world.w * 3), 1200);
-    // ground is bottom ~ 40% of screen by height
+    // ground is bottom ~ 60% of screen by height
     groundTop = Math.floor(world.h * 0.6);
     initGrid();
     // keep camera in bounds after resize
@@ -54,32 +54,42 @@
   function initSize(){ const rect = canvas.getBoundingClientRect(); if(rect.width===0||rect.height===0){ canvas.style.width='100%'; canvas.style.height='100%'; } resize(); }
   initSize();
 
+  // --- smoothing / terrain generation ---
+  function smoothArray(arr, passes, kernelRadius){
+    const n = arr.length;
+    const tmp = new Int32Array(n);
+    for(let p=0;p<passes;p++){
+      for(let i=0;i<n;i++){
+        let sum = 0, count = 0;
+        for(let k=-kernelRadius;k<=kernelRadius;k++){
+          const j = i + k;
+          if(j < 0 || j >= n) continue;
+          sum += arr[j]; count++;
+        }
+        tmp[i] = Math.round(sum / count);
+      }
+      for(let i=0;i<n;i++) arr[i] = tmp[i];
+    }
+  }
+
   function initGrid(){
     cols = Math.ceil(world.worldW / SAND_PIXEL);
     rows = Math.ceil((world.h - groundTop) / SAND_PIXEL);
     sandGrid = new Uint8Array(cols * rows);
     groundGrid = new Uint8Array(cols * rows);
 
-    // Broadly flat ground with small variation
+    // Broadly flat ground with very small variation
     const baseCells = Math.max(2, Math.floor(rows * 0.5));
-    const amplitude = Math.max(1, Math.floor(rows * 0.03)); // small bumps
+    const amplitude = Math.max(1, Math.floor(rows * 0.015)); // reduce amplitude for flatter ground
     const heights = new Int32Array(cols);
     for(let x=0;x<cols;x++){
       const nx = x/cols;
-      // low-frequency variation only
-      const v = Math.sin(nx * 4) * 0.5 + Math.cos(nx * 2.3) * 0.3;
+      // very low-frequency variation
+      const v = Math.sin(nx * 2.0) * 0.35 + Math.cos(nx * 1.2) * 0.2;
       heights[x] = baseCells + Math.round(v * amplitude);
     }
-    // Smooth heights to remove jagged edges
-    for(let pass=0; pass<4; pass++){
-      const tmp = new Int32Array(cols);
-      for(let x=0;x<cols;x++){
-        const left = heights[(x-1+cols)%cols];
-        const right = heights[(x+1)%cols];
-        tmp[x] = Math.round((left + heights[x] + right) / 3);
-      }
-      for(let x=0;x<cols;x++) heights[x] = tmp[x];
-    }
+    // Smooth the heights strongly to avoid jagged edges
+    smoothArray(heights, 6, 2); // 6 passes, radius 2
 
     // Fill groundGrid using heights
     for(let x=0;x<cols;x++){
@@ -88,7 +98,7 @@
       for(let y=rows-1; y>=topY; y--){ groundGrid[y*cols + x] = 1; }
     }
 
-    // clear sandGrid
+    // empty sand
     sandGrid.fill(0);
     heldSand = 0;
     if(ui.sandCount) ui.sandCount.textContent = heldSand;
@@ -100,12 +110,14 @@
     return {gx, gy};
   }
 
-  // Sand physics (cellular automata falling on empty cells; groundGrid blocks)
+  // mine flash feedback
+  let mineFlash = {x:0,y:0,ttl:0};
+
+  // Sand physics (CA) - operate only on visible columns ± margin
   function step(){
     if(!sandGrid) return;
-    // iterate bottom-up, but only on visible area +/- margin for efficiency
-    const leftCol = Math.max(0, Math.floor(world.camX / SAND_PIXEL) - 4);
-    const rightCol = Math.min(cols-1, Math.ceil((world.camX + world.w) / SAND_PIXEL) + 4);
+    const leftCol = Math.max(0, Math.floor(world.camX / SAND_PIXEL) - 6);
+    const rightCol = Math.min(cols-1, Math.ceil((world.camX + world.w) / SAND_PIXEL) + 6);
     for(let y = rows-1; y>=0; y--){
       for(let x = leftCol; x<= rightCol; x++){
         const idx = y*cols + x;
@@ -115,7 +127,7 @@
           const belowIdx = belowY*cols + x;
           if(sandGrid[belowIdx] === 0 && groundGrid[belowIdx] === 0){ sandGrid[belowIdx] = 1; sandGrid[idx] = 0; continue; }
           const dir = (Math.random() > 0.5) ? -1 : 1;
-          const nx = x + dir; const ny = y+1;
+          const nx = x + dir, ny = y + 1;
           if(nx >=0 && nx < cols && ny < rows && sandGrid[ny*cols + nx] === 0 && groundGrid[ny*cols + nx] === 0){ sandGrid[ny*cols + nx] = 1; sandGrid[idx]=0; continue; }
           const ox = x - dir;
           if(ox >=0 && ox < cols && ny < rows && sandGrid[ny*cols + ox] === 0 && groundGrid[ny*cols + ox] === 0){ sandGrid[ny*cols + ox] = 1; sandGrid[idx]=0; continue; }
@@ -139,7 +151,7 @@
           if(groundGrid[idx]){
             const px = x * SAND_PIXEL - world.camX;
             const py = groundTop + y * SAND_PIXEL - world.camY;
-            ctx.fillStyle = '#6B3E22'; // darker ground block
+            ctx.fillStyle = '#6B3E22';
             ctx.fillRect(Math.floor(px), Math.floor(py), SAND_PIXEL, SAND_PIXEL);
           }
         }
@@ -163,32 +175,47 @@
       }
     }
 
+    // mine flash
+    if(mineFlash.ttl > 0){
+      ctx.save();
+      ctx.globalAlpha = Math.min(0.45, mineFlash.ttl / 12);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(mineFlash.x - 6 - world.camX, mineFlash.y - 6 - world.camY, 24, 24);
+      ctx.restore();
+      mineFlash.ttl--;
+    }
+
     // HUD overlay (mode)
     ctx.save();
     ctx.fillStyle = 'rgba(0,0,0,0.06)';
     ctx.font = '12px system-ui';
-    ctx.fillText('Mode: ' + mode, 12 - world.camX, 18 - world.camY);
+    ctx.fillText('Mode: ' + mode, 12, 18);
     ctx.restore();
   }
 
   // Mining: convert ground cells into sand cells (sand appears in-world) - does NOT add to inventory
   function mineAt(wx, wy, brushPx=12){
-    if(!groundGrid) return;
+    if(!groundGrid) return 0;
     const {gx, gy} = worldToGrid(wx, wy);
     const r = Math.max(1, Math.round(brushPx / SAND_PIXEL));
+    let removed = 0;
     for(let dy = -r; dy <= r; dy++){
       for(let dx = -r; dx <= r; dx++){
         const x = gx + dx, y = gy + dy;
         if(x<0||x>=cols||y<0||y>=rows) continue;
         const idx = y*cols + x;
-        if(groundGrid[idx] === 1){ groundGrid[idx] = 0; sandGrid[idx] = 1; }
+        if(groundGrid[idx] === 1){ groundGrid[idx] = 0; sandGrid[idx] = 1; removed++; }
       }
     }
+    if(removed>0){
+      mineFlash.x = gx * SAND_PIXEL + SAND_PIXEL/2; mineFlash.y = groundTop + gy * SAND_PIXEL + SAND_PIXEL/2; mineFlash.ttl = 12;
+    }
+    return removed;
   }
 
   // Collect sand into inventory (removes sand cells)
   function collectAt(wx, wy, brushPx=12){
-    if(!sandGrid) return;
+    if(!sandGrid) return 0;
     const {gx, gy} = worldToGrid(wx, wy);
     const r = Math.max(1, Math.round(brushPx / SAND_PIXEL));
     let removed = 0;
@@ -200,29 +227,29 @@
         if(sandGrid[idx] === 1){ sandGrid[idx] = 0; removed++; }
       }
     }
-    if(removed){
-      heldSand += removed;
-      if(ui.sandCount) ui.sandCount.textContent = heldSand;
-    }
+    if(removed){ heldSand += removed; if(ui.sandCount) ui.sandCount.textContent = heldSand; }
+    return removed;
   }
 
   // Drop sand into grid (places sand cells; physics will settle them)
   function dropAt(wx, wy, brushPx=12){
-    if(!sandGrid || heldSand <= 0) return;
+    if(!sandGrid || heldSand <= 0) return 0;
     const {gx, gy} = worldToGrid(wx, wy);
     const r = Math.max(1, Math.round(brushPx / SAND_PIXEL));
+    let placed = 0;
     for(let dy = -r; dy <= r && heldSand>0; dy++){
       for(let dx = -r; dx <= r && heldSand>0; dx++){
         const x = gx + dx;
         if(x<0||x>=cols) continue;
-        // place at highest empty cell (closest to top of ground area)
+        // place at highest empty cell in that column
         for(let y = 0; y<rows; y++){
           const idx = y*cols + x;
           if(groundGrid[idx] === 0 && sandGrid[idx] === 0){ sandGrid[idx] = 1; placed++; heldSand--; break; }
         }
       }
     }
-    ui.sandCount.textContent = heldSand;
+    if(ui.sandCount) ui.sandCount.textContent = heldSand;
+    return placed;
   }
 
   // Pointer interaction
@@ -230,12 +257,12 @@
   canvas.addEventListener('pointerdown', e=>{
     canvas.setPointerCapture(e.pointerId);
     isPointerDown = true; dragging = false;
-    panStart = {x:e.clientX, y:e.clientY, camX: world.camX, camY: world.camY};
+    panStart = {x:e.clientX, y:e.clientY, camX: world.camX};
     const rect = canvas.getBoundingClientRect();
     const px = e.clientX - rect.left; const py = e.clientY - rect.top;
-    if(mode === 'mine'){ mineAt(px, py, 12); }
-    if(mode === 'collect'){ collectAt(px, py, 12); }
-    if(mode === 'drop'){ dropAt(px, py, 12); }
+    if(mode === 'mine') mineAt(px, py, 12);
+    if(mode === 'collect') collectAt(px, py, 12);
+    if(mode === 'drop') dropAt(px, py, 12);
   });
   canvas.addEventListener('pointermove', e=>{
     if(!isPointerDown) return;
@@ -243,7 +270,6 @@
     if(Math.hypot(dx,dy) > 6) dragging = true;
     if(dragging && mode === 'pan'){
       world.camX = clamp(panStart.camX - dx, 0, Math.max(0, world.worldW - world.w));
-      world.camY = clamp(panStart.camY - dy, 0, Math.max(0, (world.h - groundTop) - world.h));
     } else {
       const rect = canvas.getBoundingClientRect();
       const px = e.clientX - rect.left; const py = e.clientY - rect.top;
@@ -255,16 +281,14 @@
   canvas.addEventListener('pointerup', e=>{ canvas.releasePointerCapture(e.pointerId); isPointerDown=false; dragging=false; panStart=null; });
 
   // Reset
-  document.getElementById('reset').addEventListener('click', ()=>{ initGrid(); heldSand = 0; ui.sandCount.textContent = heldSand; setMode('pan'); });
+  const resetBtn = document.getElementById('reset');
+  if (resetBtn) resetBtn.addEventListener('click', ()=>{ initGrid(); heldSand = 0; if (ui.sandCount) ui.sandCount.textContent = heldSand; setMode('pan'); });
 
   // Main loop
-  let last = performance.now();
-  function loop(now){
-    const dt = Math.min(1/30, (now - last) / 1000);
-    // run several small CA steps per frame to make sand flow faster
-    for(let i=0;i<3;i++) step(dt);
+  function loop(){
+    // run a few CA steps per frame to let sand settle
+    for(let i=0;i<4;i++) step();
     draw();
-    last = now;
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
