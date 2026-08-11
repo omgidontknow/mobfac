@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>Sand Factory — Mobile Prototype</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Sand Factory — Prototype</h1>
+    <div id="topbar" class="panel">
+      <div class="row"><div class="stat">Coins:</div><div id="coins" class="big">0</div></div>
+      <div class="row"><div class="stat">Sand:</div><div id="sandCount" class="big">0</div></div>
+    </div>
+  </header>
+
+  <div id="gameWrap">
+    <div id="game" class="panel">
+      <canvas id="c"></canvas>
+      <div id="hud">
+        <button id="spawnBtn" class="btn">Spawn Sand</button>
+        <div class="shop">
+          <button id="buyConveyor" class="btn">Buy Conveyor (50)</button>
+          <button id="buyAuto" class="btn">Auto Processor (200)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="panel">
+    <div class="stat">Tap "Spawn Sand" or tap the canvas to drop sand. Drag to pan. Place conveyors by buying then tapping canvas.</div>
+    <div class="controls">
+      <button id="reset" class="btn">Reset</button>
+    </div>
+  </footer>
+</div>
+
+<script src="js/app.js" defer></script>
+</body>
+</html>
