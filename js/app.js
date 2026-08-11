@@ -13,7 +13,7 @@
   let groundGrid = null; // Uint8Array(cols*rows)
 
   // World
-  let world = { w:0, h:0, camX:0, camY:0 };
+  let world = { w:0, h:0, camX:0, camY:0, worldW:0 };
   let groundTop = 0; // y coordinate (in px) where ground starts
 
   // Inventory
@@ -32,6 +32,8 @@
   if (typeof ctx.webkitImageSmoothingEnabled !== 'undefined') ctx.webkitImageSmoothingEnabled = false;
   canvas.style.imageRendering = 'pixelated';
 
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+
   function resize() {
     DPR = Math.max(1, window.devicePixelRatio || 1);
     const rect = canvas.getBoundingClientRect();
@@ -39,9 +41,13 @@
     canvas.height = Math.floor(rect.height * DPR);
     ctx.setTransform(DPR,0,0,DPR,0,0);
     world.w = canvas.width / DPR; world.h = canvas.height / DPR;
+    // virtual world width: 3x viewport or at least 1200px
+    world.worldW = Math.max(Math.floor(world.w * 3), 1200);
     // ground is bottom ~ 40% of screen by height
     groundTop = Math.floor(world.h * 0.6);
     initGrid();
+    // keep camera in bounds after resize
+    world.camX = clamp(world.camX, 0, Math.max(0, world.worldW - world.w));
   }
   window.addEventListener('resize', resize);
   // initial
@@ -49,18 +55,43 @@
   initSize();
 
   function initGrid(){
-    cols = Math.ceil(world.w / SAND_PIXEL);
+    cols = Math.ceil(world.worldW / SAND_PIXEL);
     rows = Math.ceil((world.h - groundTop) / SAND_PIXEL);
     sandGrid = new Uint8Array(cols * rows);
     groundGrid = new Uint8Array(cols * rows);
-    // fill ground with a natural-looking slope (groundGrid = 1)
+
+    // Broadly flat ground with small variation
+    const baseCells = Math.max(2, Math.floor(rows * 0.5));
+    const amplitude = Math.max(1, Math.floor(rows * 0.03)); // small bumps
+    const heights = new Int32Array(cols);
     for(let x=0;x<cols;x++){
       const nx = x/cols;
-      const heightPx = Math.floor((0.5 + 0.12 * Math.sin(nx * 12) + 0.06 * Math.cos(nx*7)) * (rows*SAND_PIXEL));
-      const hCells = Math.min(rows, Math.max(1, Math.floor(heightPx / SAND_PIXEL)));
-      for(let y=rows-1; y>=rows-hCells; y--){ groundGrid[y*cols + x] = 1; }
+      // low-frequency variation only
+      const v = Math.sin(nx * 4) * 0.5 + Math.cos(nx * 2.3) * 0.3;
+      heights[x] = baseCells + Math.round(v * amplitude);
     }
-    // ensure sandGrid is empty initially (no sand on load)
+    // Smooth heights to remove jagged edges
+    for(let pass=0; pass<4; pass++){
+      const tmp = new Int32Array(cols);
+      for(let x=0;x<cols;x++){
+        const left = heights[(x-1+cols)%cols];
+        const right = heights[(x+1)%cols];
+        tmp[x] = Math.round((left + heights[x] + right) / 3);
+      }
+      for(let x=0;x<cols;x++) heights[x] = tmp[x];
+    }
+
+    // Fill groundGrid using heights
+    for(let x=0;x<cols;x++){
+      const hCells = clamp(heights[x], 1, rows);
+      const topY = rows - hCells;
+      for(let y=rows-1; y>=topY; y--){ groundGrid[y*cols + x] = 1; }
+    }
+
+    // clear sandGrid
+    sandGrid.fill(0);
+    heldSand = 0;
+    if(ui.sandCount) ui.sandCount.textContent = heldSand;
   }
 
   function worldToGrid(wx, wy){
@@ -68,29 +99,26 @@
     const gy = Math.floor((wy - groundTop) / SAND_PIXEL);
     return {gx, gy};
   }
-  function gridIndex(gx,gy){ return gy*cols + gx; }
 
   // Sand physics (cellular automata falling on empty cells; groundGrid blocks)
-  function step(dt){
+  function step(){
     if(!sandGrid) return;
-    // iterate bottom-up
+    // iterate bottom-up, but only on visible area +/- margin for efficiency
+    const leftCol = Math.max(0, Math.floor(world.camX / SAND_PIXEL) - 4);
+    const rightCol = Math.min(cols-1, Math.ceil((world.camX + world.w) / SAND_PIXEL) + 4);
     for(let y = rows-1; y>=0; y--){
-      for(let x = 0; x<cols; x++){
+      for(let x = leftCol; x<= rightCol; x++){
         const idx = y*cols + x;
         if(sandGrid[idx] !== 1) continue;
-        // if below is empty of both sand and ground, fall
         const belowY = y+1;
         if(belowY < rows){
           const belowIdx = belowY*cols + x;
           if(sandGrid[belowIdx] === 0 && groundGrid[belowIdx] === 0){ sandGrid[belowIdx] = 1; sandGrid[idx] = 0; continue; }
-          // try diagonal
           const dir = (Math.random() > 0.5) ? -1 : 1;
           const nx = x + dir; const ny = y+1;
           if(nx >=0 && nx < cols && ny < rows && sandGrid[ny*cols + nx] === 0 && groundGrid[ny*cols + nx] === 0){ sandGrid[ny*cols + nx] = 1; sandGrid[idx]=0; continue; }
           const ox = x - dir;
           if(ox >=0 && ox < cols && ny < rows && sandGrid[ny*cols + ox] === 0 && groundGrid[ny*cols + ox] === 0){ sandGrid[ny*cols + ox] = 1; sandGrid[idx]=0; continue; }
-        } else {
-          // at bottom row - nothing
         }
       }
     }
@@ -101,14 +129,16 @@
     ctx.fillStyle = '#87CEEB';
     ctx.fillRect(0,0, world.w, world.h);
 
-    // draw ground grid
+    // draw ground grid (only visible columns)
     if(groundGrid){
-      for(let y=0;y<rows;y++){
-        for(let x=0;x<cols;x++){
+      const startCol = Math.max(0, Math.floor(world.camX / SAND_PIXEL) - 2);
+      const endCol = Math.min(cols-1, Math.ceil((world.camX + world.w) / SAND_PIXEL) + 2);
+      for(let x=startCol; x<=endCol; x++){
+        for(let y=0;y<rows;y++){
           const idx = y*cols + x;
-          const px = x * SAND_PIXEL - world.camX;
-          const py = groundTop + y * SAND_PIXEL - world.camY;
           if(groundGrid[idx]){
+            const px = x * SAND_PIXEL - world.camX;
+            const py = groundTop + y * SAND_PIXEL - world.camY;
             ctx.fillStyle = '#6B3E22'; // darker ground block
             ctx.fillRect(Math.floor(px), Math.floor(py), SAND_PIXEL, SAND_PIXEL);
           }
@@ -116,10 +146,12 @@
       }
     }
 
-    // draw sand grid on top of ground
+    // draw sand grid on top of ground (only visible columns)
     if(sandGrid){
-      for(let y=0;y<rows;y++){
-        for(let x=0;x<cols;x++){
+      const startCol = Math.max(0, Math.floor(world.camX / SAND_PIXEL) - 2);
+      const endCol = Math.min(cols-1, Math.ceil((world.camX + world.w) / SAND_PIXEL) + 2);
+      for(let x=startCol; x<=endCol; x++){
+        for(let y=0;y<rows;y++){
           if(sandGrid[y*cols + x]){
             const px = x * SAND_PIXEL - world.camX;
             const py = groundTop + y * SAND_PIXEL - world.camY;
@@ -179,7 +211,6 @@
     if(!sandGrid || heldSand <= 0) return;
     const {gx, gy} = worldToGrid(wx, wy);
     const r = Math.max(1, Math.round(brushPx / SAND_PIXEL));
-    let placed = 0;
     for(let dy = -r; dy <= r && heldSand>0; dy++){
       for(let dx = -r; dx <= r && heldSand>0; dx++){
         const x = gx + dx;
@@ -211,8 +242,8 @@
     const dx = e.clientX - panStart.x, dy = e.clientY - panStart.y;
     if(Math.hypot(dx,dy) > 6) dragging = true;
     if(dragging && mode === 'pan'){
-      world.camX = Math.max(0, panStart.camX - dx);
-      world.camY = Math.max(0, panStart.camY - dy);
+      world.camX = clamp(panStart.camX - dx, 0, Math.max(0, world.worldW - world.w));
+      world.camY = clamp(panStart.camY - dy, 0, Math.max(0, (world.h - groundTop) - world.h));
     } else {
       const rect = canvas.getBoundingClientRect();
       const px = e.clientX - rect.left; const py = e.clientY - rect.top;
