@@ -177,7 +177,6 @@
             // texture: subtle per-cell variation and top-edge emphasis
             const n = hash01(x, y*3);
             const base = mixColor([107,62,34],[90,50,30], n*0.6);
-            // if top edge (cell above is empty) emphasize lighter
             const aboveIdx = (y-1)>=0 ? ((y-1)*cols + x) : -1;
             let color = base;
             if(aboveIdx === -1 || groundGrid[aboveIdx] === 0){ color = mixColor(base, [140,90,56], 0.45); }
@@ -215,26 +214,21 @@
       }
     }
 
-    // mine flash
+    // mine flash (round)
     if(mineFlash.ttl > 0){
       ctx.save();
       ctx.globalAlpha = Math.min(0.5, mineFlash.ttl / 12);
       ctx.fillStyle = '#ffffff';
-      const sx = mineFlash.x - world.camX - 8;
-      const sy = mineFlash.y - world.camY - 8;
+      const sx = mineFlash.x - world.camX;
+      const sy = mineFlash.y - world.camY;
       ctx.beginPath();
-      ctx.arc(Math.floor(sx + 12), Math.floor(sy + 12), 12, 0, Math.PI*2);
+      ctx.arc(Math.floor(sx), Math.floor(sy), 12, 0, Math.PI*2);
       ctx.fill();
       ctx.restore();
       mineFlash.ttl--;
     }
 
-    // HUD overlay (mode)
-    ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.06)';
-    ctx.font = '12px system-ui';
-    ctx.fillText('Mode: ' + mode, 12, 18);
-    ctx.restore();
+    // (removed mode text - redundant)
   }
 
   // determine if a ground cell at (x,y) is accessible (not fully enclosed by ground)
@@ -251,7 +245,7 @@
     return false;
   }
 
-  // Mining: round brush; convert only accessible ground cells into sand cells
+  // Mining: round brush; convert only accessible ground cells into sand cells at ~0.5 rate
   function mineAt(wx, wy, brushPx=12){
     if(!groundGrid) return 0;
     const {gx, gy} = worldToGrid(wx, wy);
@@ -265,7 +259,14 @@
         if(x<0||x>=cols||y<0||y>=rows) continue;
         const idx = y*cols + x;
         if(groundGrid[idx] === 1 && groundAccessible(x,y)){
-          groundGrid[idx] = 0; sandGrid[idx] = 1; removed++; }
+          // always remove the ground cell (leave hole)
+          groundGrid[idx] = 0;
+          // generate sand at ~50% rate from mined ground
+          if(Math.random() < 0.5){
+            sandGrid[idx] = 1;
+          }
+          removed++;
+        }
       }
     }
     if(removed>0){
