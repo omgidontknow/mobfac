@@ -1,42 +1,618 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>Sand Factory — Mobile Prototype</title>
-<link rel="stylesheet" href="css/styles.css">
-</head>
-<body>
-<div class="app">
-  <header>
-    <h1>Sand Factory — Prototype</h1>
-    <div id="topbar" class="panel">
-      <div class="row"><div class="stat">Coins:</div><div id="coins" class="big">0</div></div>
-      <div class="row"><div class="stat">Sand:</div><div id="sandCount" class="big">0</div></div>
-    </div>
-  </header>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Sand Factory</title>
 
-  <div id="gameWrap">
-    <div id="game" class="panel">
-      <canvas id="c"></canvas>
-      <div id="hud">
-        <div class="mode-controls">
-          <button id="panBtn" class="btn active">Pan</button>
-          <button id="mineBtn" class="btn">Mine</button>
-          <button id="collectBtn" class="btn">Collect</button>
-          <button id="dropBtn" class="btn">Drop</button>
-        </div>
-      </div>
+<style>
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #11151a;
+  color: white;
+  font-family: Arial, sans-serif;
+  touch-action: none;
+}
+
+#game {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #182028;
+}
+
+#ui {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.panel {
+  background: rgba(20,25,30,.9);
+  border: 1px solid #39434d;
+  border-radius: 12px;
+  padding: 9px 12px;
+  box-shadow: 0 4px 15px rgba(0,0,0,.3);
+}
+
+.money {
+  color: #ffd34d;
+  font-weight: bold;
+}
+
+.bottom {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px;
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+button {
+  pointer-events: auto;
+  border: 1px solid #46515c;
+  background: #252e36;
+  color: white;
+  border-radius: 12px;
+  min-width: 72px;
+  min-height: 48px;
+  padding: 8px 10px;
+  font-weight: bold;
+  font-size: 13px;
+}
+
+button:active {
+  transform: scale(.95);
+  background: #3a4650;
+}
+
+button.selected {
+  background: #c88b2b;
+  border-color: #ffd35a;
+  color: #111;
+}
+
+.help {
+  position: absolute;
+  left: 50%;
+  bottom: 78px;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,.65);
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+</style>
+</head>
+
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="ui">
+
+  <div class="topbar">
+    <div class="panel">
+      💰 <span class="money" id="money">100</span>
+    </div>
+
+    <div class="panel">
+      🟨 Sand: <span id="sandCount">0</span>
     </div>
   </div>
 
-  <footer class="panel">
-    <div class="controls">
-      <button id="reset" class="btn">Reset</button>
-    </div>
-  </footer>
+  <div class="help">
+    Tap the world to place machines
+  </div>
+
+  <div class="bottom">
+    <button id="sandBtn" class="selected">
+      🟨 Sand<br>$10
+    </button>
+
+    <button id="wallBtn">
+      🧱 Wall<br>$5
+    </button>
+
+    <button id="beltBtn">
+      ➡️ Belt<br>$20
+    </button>
+
+    <button id="sellBtn">
+      💰 Sell<br>$0
+    </button>
+
+    <button id="deleteBtn">
+      ❌ Delete
+    </button>
+  </div>
+
 </div>
 
-<script src="js/app.js" defer></script>
+<script>
+/* =========================================================
+   SAND FACTORY 0.1
+   ========================================================= */
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+let W = 0;
+let H = 0;
+
+function resize() {
+  W = canvas.width = window.innerWidth * devicePixelRatio;
+  H = canvas.height = window.innerHeight * devicePixelRatio;
+
+  canvas.style.width = window.innerWidth + "px";
+  canvas.style.height = window.innerHeight + "px";
+
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+
+window.addEventListener("resize", resize);
+resize();
+
+/* ---------------------------------------------------------
+   WORLD
+   --------------------------------------------------------- */
+
+const CELL = 12;
+
+let cols = 0;
+let rows = 0;
+
+let grid = [];
+
+const EMPTY = 0;
+const SAND = 1;
+const WALL = 2;
+const BELT = 3;
+const SELL = 4;
+
+function createWorld() {
+  cols = Math.ceil(window.innerWidth / CELL);
+  rows = Math.ceil(window.innerHeight / CELL);
+
+  grid = Array.from(
+    { length: rows },
+    () => Array(cols).fill(EMPTY)
+  );
+
+  // Floor
+  for (let x = 0; x < cols; x++) {
+    grid[rows - 2][x] = WALL;
+    grid[rows - 1][x] = WALL;
+  }
+
+  // Starting sand generator
+  for (let x = 8; x < 14; x++) {
+    grid[5][x] = SAND;
+  }
+
+  // Starting platform
+  for (let x = 5; x < 20; x++) {
+    grid[18][x] = WALL;
+  }
+
+  // Starting sell area
+  grid[17][18] = SELL;
+}
+
+createWorld();
+
+/* ---------------------------------------------------------
+   ECONOMY
+   --------------------------------------------------------- */
+
+let money = 100;
+let sandSold = 0;
+
+const prices = {
+  [SAND]: 10,
+  [WALL]: 5,
+  [BELT]: 20,
+  [SELL]: 0
+};
+
+let selected = SAND;
+
+function updateUI() {
+  document.getElementById("money").textContent = money;
+  document.getElementById("sandCount").textContent = sandSold;
+}
+
+/* ---------------------------------------------------------
+   BUTTONS
+   --------------------------------------------------------- */
+
+const buttons = {
+  sandBtn: SAND,
+  wallBtn: WALL,
+  beltBtn: BELT,
+  sellBtn: SELL,
+  deleteBtn: -1
+};
+
+for (const id in buttons) {
+  document.getElementById(id).addEventListener("click", () => {
+
+    selected = buttons[id];
+
+    document
+      .querySelectorAll("button")
+      .forEach(b => b.classList.remove("selected"));
+
+    document.getElementById(id).classList.add("selected");
+  });
+}
+
+/* ---------------------------------------------------------
+   PLACEMENT
+   --------------------------------------------------------- */
+
+function placeAt(screenX, screenY) {
+
+  const x = Math.floor(screenX / CELL);
+  const y = Math.floor(screenY / CELL);
+
+  if (x < 0 || x >= cols || y < 0 || y >= rows) {
+    return;
+  }
+
+  // Don't modify floor
+  if (y >= rows - 2) return;
+
+  // Delete
+  if (selected === -1) {
+    grid[y][x] = EMPTY;
+    return;
+  }
+
+  // Can't place over sand
+  if (grid[y][x] === SAND) return;
+
+  const cost = prices[selected];
+
+  if (money < cost) return;
+
+  money -= cost;
+  grid[y][x] = selected;
+
+  updateUI();
+}
+
+/* ---------------------------------------------------------
+   TOUCH
+   --------------------------------------------------------- */
+
+canvas.addEventListener("pointerdown", e => {
+  placeAt(e.clientX, e.clientY);
+});
+
+canvas.addEventListener("pointermove", e => {
+  if (e.buttons) {
+    placeAt(e.clientX, e.clientY);
+  }
+});
+
+/* ---------------------------------------------------------
+   SAND PHYSICS
+   --------------------------------------------------------- */
+
+function inside(x, y) {
+  return (
+    x >= 0 &&
+    x < cols &&
+    y >= 0 &&
+    y < rows
+  );
+}
+
+function moveSand(x, y, nx, ny) {
+
+  if (!inside(nx, ny)) return false;
+
+  if (grid[ny][nx] !== EMPTY &&
+      grid[ny][nx] !== BELT &&
+      grid[ny][nx] !== SELL) {
+    return false;
+  }
+
+  grid[ny][nx] = SAND;
+  grid[y][x] = EMPTY;
+
+  return true;
+}
+
+function updateSand() {
+
+  // Bottom-to-top so sand behaves naturally.
+  for (let y = rows - 3; y >= 0; y--) {
+
+    // Randomize direction for natural piles
+    const leftFirst = Math.random() < 0.5;
+
+    for (
+      let x = leftFirst ? 0 : cols - 1;
+      leftFirst ? x < cols : x >= 0;
+      x += leftFirst ? 1 : -1
+    ) {
+
+      if (grid[y][x] !== SAND) continue;
+
+      // Down
+      if (moveSand(x, y, x, y + 1)) {
+        continue;
+      }
+
+      // Diagonal
+      if (leftFirst) {
+
+        if (moveSand(x, y, x - 1, y + 1)) {
+          continue;
+        }
+
+        if (moveSand(x, y, x + 1, y + 1)) {
+          continue;
+        }
+
+      } else {
+
+        if (moveSand(x, y, x + 1, y + 1)) {
+          continue;
+        }
+
+        if (moveSand(x, y, x - 1, y + 1)) {
+          continue;
+        }
+      }
+    }
+  }
+}
+
+/* ---------------------------------------------------------
+   SAND GENERATOR
+   --------------------------------------------------------- */
+
+let generatorTimer = 0;
+
+function generateSand() {
+
+  generatorTimer++;
+
+  if (generatorTimer < 8) return;
+
+  generatorTimer = 0;
+
+  // Generate from the top starting area
+  const x = 10;
+  const y = 4;
+
+  if (inside(x, y) && grid[y][x] === EMPTY) {
+    grid[y][x] = SAND;
+  }
+}
+
+/* ---------------------------------------------------------
+   SELLING
+   --------------------------------------------------------- */
+
+function sellSand() {
+
+  for (let y = 0; y < rows; y++) {
+
+    for (let x = 0; x < cols; x++) {
+
+      if (grid[y][x] !== SELL) continue;
+
+      const neighbours = [
+        [x - 1, y],
+        [x + 1, y],
+        [x, y - 1],
+        [x, y + 1]
+      ];
+
+      for (const [nx, ny] of neighbours) {
+
+        if (!inside(nx, ny)) continue;
+
+        if (grid[ny][nx] === SAND) {
+
+          grid[ny][nx] = EMPTY;
+
+          money += 2;
+          sandSold++;
+
+          updateUI();
+        }
+      }
+    }
+  }
+}
+
+/* ---------------------------------------------------------
+   DRAW
+   --------------------------------------------------------- */
+
+function draw() {
+
+  ctx.clearRect(
+    0,
+    0,
+    window.innerWidth,
+    window.innerHeight
+  );
+
+  // Background
+  ctx.fillStyle = "#182028";
+  ctx.fillRect(
+    0,
+    0,
+    window.innerWidth,
+    window.innerHeight
+  );
+
+  // Subtle grid
+  ctx.strokeStyle = "rgba(255,255,255,.035)";
+  ctx.lineWidth = 1;
+
+  for (let x = 0; x < cols; x++) {
+    ctx.beginPath();
+    ctx.moveTo(x * CELL, 0);
+    ctx.lineTo(x * CELL, window.innerHeight);
+    ctx.stroke();
+  }
+
+  for (let y = 0; y < rows; y++) {
+    ctx.beginPath();
+    ctx.moveTo(0, y * CELL);
+    ctx.lineTo(window.innerWidth, y * CELL);
+    ctx.stroke();
+  }
+
+  // Cells
+  for (let y = 0; y < rows; y++) {
+
+    for (let x = 0; x < cols; x++) {
+
+      const type = grid[y][x];
+
+      if (type === EMPTY) continue;
+
+      const px = x * CELL;
+      const py = y * CELL;
+
+      if (type === SAND) {
+
+        ctx.fillStyle = "#e3b34d";
+
+        ctx.fillRect(
+          px + 1,
+          py + 1,
+          CELL - 2,
+          CELL - 2
+        );
+
+      } else if (type === WALL) {
+
+        ctx.fillStyle = "#59636d";
+
+        ctx.fillRect(
+          px,
+          py,
+          CELL,
+          CELL
+        );
+
+        ctx.strokeStyle = "#707b85";
+        ctx.strokeRect(
+          px,
+          py,
+          CELL,
+          CELL
+        );
+
+      } else if (type === BELT) {
+
+        ctx.fillStyle = "#3f7190";
+
+        ctx.fillRect(
+          px,
+          py,
+          CELL,
+          CELL
+        );
+
+        ctx.fillStyle = "#8ed4f5";
+        ctx.font = "10px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(
+          "›",
+          px + CELL / 2,
+          py + CELL - 2
+        );
+
+      } else if (type === SELL) {
+
+        ctx.fillStyle = "#2c8c5b";
+
+        ctx.fillRect(
+          px,
+          py,
+          CELL,
+          CELL
+        );
+
+        ctx.fillStyle = "#fff";
+        ctx.font = "9px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(
+          "$",
+          px + CELL / 2,
+          py + CELL - 2
+        );
+      }
+    }
+  }
+
+  // Generator
+  ctx.fillStyle = "#d7a63b";
+  ctx.fillRect(8 * CELL, 2 * CELL, 5 * CELL, 2 * CELL);
+
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 12px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText(
+    "SAND",
+    10.5 * CELL,
+    3.3 * CELL
+  );
+
+  requestAnimationFrame(draw);
+}
+
+/* ---------------------------------------------------------
+   GAME LOOP
+   --------------------------------------------------------- */
+
+setInterval(() => {
+
+  updateSand();
+  generateSand();
+  sellSand();
+
+}, 50);
+
+updateUI();
+draw();
+
+</script>
+
 </body>
 </html>
