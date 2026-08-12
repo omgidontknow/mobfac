@@ -11,7 +11,8 @@
   <header>
     <h1>Sand Factory — Prototype</h1>
     <div id="topbar" class="panel">
-      <div class="row"><div class="stat">Held Sand:</div><div id="sandCount" class="big">0</div></div>
+      <div class="row"><div class="stat">Coins:</div><div id="coins" class="big">0</div></div>
+      <div class="row"><div class="stat">Sand:</div><div id="sandCount" class="big">0</div></div>
     </div>
   </header>
 
@@ -19,18 +20,24 @@
     <div id="game" class="panel">
       <canvas id="c"></canvas>
       <div id="hud">
-        <button id="mineBtn" class="btn toggle">Mine</button>
-        <button id="collectBtn" class="btn toggle">Collect</button>
-        <button id="dropBtn" class="btn toggle">Drop</button>
-        <button id="reset" class="btn">Reset</button>
+        <button id="spawnBtn" class="btn">Spawn Sand</button>
+        <div class="mode-controls">
+          <button id="panBtn" class="btn active">Pan</button>
+          <button id="mineBtn" class="btn">Mine</button>
+          <button id="collectBtn" class="btn">Collect</button>
+          <button id="dropBtn" class="btn">Drop</button>
+        </div>
+        <div class="shop">
+          <button id="buyConveyor" class="btn">Buy Conveyor (50)</button>
+          <button id="buyAuto" class="btn">Auto Processor (200)</button>
+        </div>
       </div>
     </div>
   </div>
 
   <footer class="panel">
-    <div class="stat">Mine removes ground and produces sand; use Collect to pick up sand into inventory, and Drop to place it back. Drag canvas to pan.</div>
     <div class="controls">
-      
+      <button id="reset" class="btn">Reset</button>
     </div>
   </footer>
 </div>
