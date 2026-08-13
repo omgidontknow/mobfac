@@ -75,7 +75,10 @@ function rebuildBuckets() {
 }
 
 
-function terrainAtPixel(x, y) {
+function terrainAtPixel(
+    x,
+    y
+) {
 
     return getTerrain(
         Math.floor(x / CELL),
@@ -245,7 +248,12 @@ function nearbySand(
 }
 
 
-/* Add newly mined/dropped sand */
+/*
+ * Add newly mined or dropped sand.
+ *
+ * Grains are created directly as individual particles.
+ * There is no temporary square/clump representation.
+ */
 
 export function spawnSand(
     cellX,
@@ -317,7 +325,20 @@ export function spawnSand(
 }
 
 
-/* Sand physics */
+/*
+ * Sand physics.
+ *
+ * The important behaviour here is:
+ *
+ * 1. Gravity is the dominant movement.
+ * 2. Grains fall vertically whenever possible.
+ * 3. When blocked, they only move a very small amount
+ *    sideways.
+ * 4. Large sideways searches have been removed.
+ *
+ * This allows sand to build vertically into pronounced
+ * piles instead of immediately spreading into flat sheets.
+ */
 
 export function updateSand() {
 
@@ -326,9 +347,14 @@ export function updateSand() {
     }
 
 
+    /*
+     * Several small simulation steps per frame make
+     * newly created sand start falling immediately.
+     */
+
     for (
         let step = 0;
-        step < 4;
+        step < 5;
         step++
     ) {
 
@@ -336,8 +362,11 @@ export function updateSand() {
 
 
         /*
-        Bottom grains first.
-        */
+         * Lower grains first.
+         *
+         * This helps the supporting part of a pile settle
+         * before grains above it are processed.
+         */
 
         sand.sort(
             (a, b) =>
@@ -355,6 +384,10 @@ export function updateSand() {
                 sand[i];
 
 
+            /*
+             * Gravity.
+             */
+
             p.vy =
                 Math.min(
                     p.vy +
@@ -363,35 +396,47 @@ export function updateSand() {
                 );
 
 
-            const nextY =
+            /*
+             * FIRST CHOICE:
+             *
+             * Always try to fall directly down.
+             */
+
+            const fallX =
+                p.x;
+
+            const fallY =
                 p.y +
                 p.vy;
 
 
-            const blockedByTerrain =
+            const terrainBlocked =
                 hitsTerrain(
                     p,
-                    p.x,
-                    nextY
+                    fallX,
+                    fallY
                 );
 
 
-            const blockedBySand =
+            const sandBlocked =
                 nearbySand(
                     p,
-                    p.x,
-                    nextY,
+                    fallX,
+                    fallY,
                     i
                 );
 
 
             if (
-                !blockedByTerrain &&
-                !blockedBySand
+                !terrainBlocked &&
+                !sandBlocked
             ) {
 
+                p.x =
+                    fallX;
+
                 p.y =
-                    nextY;
+                    fallY;
 
                 p.supported =
                     false;
@@ -401,14 +446,20 @@ export function updateSand() {
 
 
             /*
-            Try to slide sideways.
-
-            The increasing distances make piles
-            noticeably more conical.
-            */
+             * The grain has reached the ground
+             * or another grain.
+             */
 
             p.vy = 0;
 
+
+            /*
+             * Only attempt a tiny sideways slide.
+             *
+             * Previously the physics searched several
+             * pixels sideways, which encouraged the sand
+             * to spread horizontally.
+             */
 
             const directions =
                 Math.random() < 0.5
@@ -416,7 +467,8 @@ export function updateSand() {
                     : [1, -1];
 
 
-            let moved = false;
+            let moved =
+                false;
 
 
             for (
@@ -424,56 +476,53 @@ export function updateSand() {
                 of directions
             ) {
 
-                for (
-                    const distance
-                    of [1.5, 2.5, 3.5]
+                const slideX =
+                    p.x +
+                    direction *
+                    1.05;
+
+                const slideY =
+                    p.y +
+                    0.45;
+
+
+                if (
+                    !hitsTerrain(
+                        p,
+                        slideX,
+                        slideY
+                    ) &&
+                    !nearbySand(
+                        p,
+                        slideX,
+                        slideY,
+                        i
+                    )
                 ) {
 
-                    const testX =
-                        p.x +
-                        direction *
-                        distance;
+                    p.x =
+                        slideX;
 
-                    const testY =
-                        p.y +
-                        0.8;
+                    p.y =
+                        slideY;
 
+                    p.supported =
+                        false;
 
-                    if (
-                        !hitsTerrain(
-                            p,
-                            testX,
-                            testY
-                        ) &&
-                        !nearbySand(
-                            p,
-                            testX,
-                            testY,
-                            i
-                        )
-                    ) {
+                    moved =
+                        true;
 
-                        p.x =
-                            testX;
-
-                        p.y =
-                            testY;
-
-                        p.supported =
-                            false;
-
-                        moved = true;
-
-                        break;
-                    }
-                }
-
-
-                if (moved) {
                     break;
                 }
             }
 
+
+            /*
+             * Nothing nearby can accept the grain.
+             *
+             * Leave it where it is. This is what allows
+             * grains to stack and piles to become higher.
+             */
 
             if (!moved) {
 
@@ -485,10 +534,11 @@ export function updateSand() {
 
 
     /*
-    Safety pass.
-
-    No grain gets to remain permanently suspended.
-    */
+     * Safety pass.
+     *
+     * If support disappeared underneath a grain,
+     * make that grain fall again.
+     */
 
     rebuildBuckets();
 
@@ -535,6 +585,7 @@ function hasSupport(
             p.y + 1
         )
     ) {
+
         return true;
     }
 
@@ -548,7 +599,9 @@ function hasSupport(
 }
 
 
-/* Collect a wider area */
+/*
+ * Collect a wider area of sand.
+ */
 
 export function collectSand(
     worldX,
@@ -592,6 +645,7 @@ export function collectSand(
         ) {
 
             candidates.push({
+
                 index: i,
 
                 distance:
@@ -609,10 +663,6 @@ export function collectSand(
     );
 
 
-    /*
-    Large inventory, wide collection.
-    */
-
     const amount =
         Math.min(
             25,
@@ -626,8 +676,8 @@ export function collectSand(
 
 
     /*
-    Remove from the end so indexes remain valid.
-    */
+     * Remove closest grains.
+     */
 
     for (
         let i = amount - 1;
@@ -642,17 +692,13 @@ export function collectSand(
     }
 
 
-    /*
-    If inventory was full, this should ideally be
-    checked before removal. We'll keep it safe by
-    returning grains if necessary in future versions.
-    */
-
     addSand(amount);
 }
 
 
-/* Drop sand */
+/*
+ * Drop sand at a location.
+ */
 
 export function dropSand(
     worldX,
