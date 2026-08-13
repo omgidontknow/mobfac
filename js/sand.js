@@ -7,13 +7,8 @@ import {
     COLLECT_RADIUS
 } from "./config.js";
 
-import {
-    getTerrain
-} from "./world.js";
-
-import {
-    addSand
-} from "./inventory.js";
+import { getTerrain } from "./world.js";
+import { addSand } from "./inventory.js";
 
 
 export const sand = [];
@@ -26,7 +21,6 @@ export const sand = [];
 const HASH_SIZE = 8;
 const buckets = new Map();
 
-
 function bucketKey(x, y) {
     return (
         Math.floor(x / HASH_SIZE) +
@@ -34,7 +28,6 @@ function bucketKey(x, y) {
         Math.floor(y / HASH_SIZE)
     );
 }
-
 
 function rebuildBuckets() {
     buckets.clear();
@@ -56,9 +49,8 @@ function rebuildBuckets() {
     }
 }
 
-
 function nearbyParticles(x, y, range) {
-    const results = [];
+    const result = [];
 
     const minX =
         Math.floor((x - range) / HASH_SIZE);
@@ -75,19 +67,19 @@ function nearbyParticles(x, y, range) {
     for (let by = minY; by <= maxY; by++) {
         for (let bx = minX; bx <= maxX; bx++) {
             const bucket =
-                buckets.get(bx + "," + by);
+                buckets.get(
+                    bx + "," + by
+                );
 
             if (!bucket) {
                 continue;
             }
 
-            for (const particle of bucket) {
-                results.push(particle);
-            }
+            result.push(...bucket);
         }
     }
 
-    return results;
+    return result;
 }
 
 
@@ -95,98 +87,93 @@ function nearbyParticles(x, y, range) {
    TERRAIN
 ========================================================= */
 
-function terrainAtPixel(x, y) {
+function terrainAt(x, y) {
     return getTerrain(
         Math.floor(x / CELL),
         Math.floor(y / CELL)
     );
 }
 
-
-/*
- * Test whether a circular grain overlaps solid terrain
- * at a proposed position.
- */
 function hitsTerrain(particle, x, y) {
     const r = particle.r;
 
     return (
-        terrainAtPixel(x - r, y - r) !== 0 ||
-        terrainAtPixel(x + r, y - r) !== 0 ||
-        terrainAtPixel(x - r, y + r) !== 0 ||
-        terrainAtPixel(x + r, y + r) !== 0
+        terrainAt(x - r, y - r) !== 0 ||
+        terrainAt(x + r, y - r) !== 0 ||
+        terrainAt(x - r, y + r) !== 0 ||
+        terrainAt(x + r, y + r) !== 0
     );
 }
 
 
 /*
- * Find the top surface of terrain immediately underneath
- * a grain.
+ * Find the highest terrain surface beneath a grain.
  */
-function terrainSupportY(particle, x = particle.x) {
+function terrainSupportY(particle, x) {
     const bottom =
         particle.y + particle.r;
 
     const cellY =
         Math.floor(bottom / CELL);
 
-    const leftX =
+    const left =
         Math.floor(
             (x - particle.r) / CELL
         );
 
-    const centreX =
+    const centre =
         Math.floor(x / CELL);
 
-    const rightX =
+    const right =
         Math.floor(
             (x + particle.r) / CELL
         );
 
-    const cells = [
-        [leftX, cellY],
-        [centreX, cellY],
-        [rightX, cellY]
-    ];
+    let top = Infinity;
 
-    let highestTop = Infinity;
-
-    for (const [cellX, y] of cells) {
-        if (getTerrain(cellX, y) !== 0) {
-            highestTop =
-                Math.min(
-                    highestTop,
-                    y * CELL
-                );
+    for (const cellX of [left, centre, right]) {
+        if (
+            getTerrain(cellX, cellY) !== 0
+        ) {
+            top = Math.min(
+                top,
+                cellY * CELL
+            );
         }
     }
 
-    return highestTop === Infinity
+    return top === Infinity
         ? null
-        : highestTop;
+        : top - particle.r;
 }
 
 
 /* =========================================================
-   SAND COLLISION
+   SAND SUPPORT
 ========================================================= */
 
 
 /*
- * Find a grain directly underneath the proposed position.
+ * Find a grain that can support this grain at X.
+ *
+ * The horizontal distance must be less than or equal to
+ * exactly one grain diameter.
  */
-function grainSupportY(particle, x, y) {
+function grainSupportY(
+    particle,
+    x
+) {
     const diameter =
         particle.r * 2;
 
-    let best = null;
-    let bestY = Infinity;
+    let support = null;
+    let supportY = Infinity;
 
     for (
         const other of nearbyParticles(
             x,
-            y,
-            diameter * 2
+            particle.y,
+            diameter + 1
         )
     ) {
         if (other === particle) {
@@ -194,20 +181,16 @@ function grainSupportY(particle, x, y) {
         }
 
         const dx =
-            Math.abs(x - other.x);
+            Math.abs(
+                x - other.x
+            );
 
-        /*
-         * The two grains need horizontal overlap.
-         */
-        if (
-            dx >
-            particle.r + other.r
-        ) {
+        if (dx > diameter) {
             continue;
         }
 
         /*
-         * Only grains below us can provide support.
+         * Only consider grains below us.
          */
         if (
             other.y <= particle.y
@@ -215,35 +198,39 @@ function grainSupportY(particle, x, y) {
             continue;
         }
 
-        const top =
-            other.y - other.r;
+        const y =
+            other.y -
+            other.r -
+            particle.r;
 
-        if (top < bestY) {
-            best = other;
-            bestY = top;
+        if (y < supportY) {
+            supportY = y;
+            support = other;
         }
     }
 
-    return best;
+    return support
+        ? supportY
+        : null;
 }
 
 
 /*
- * Does a grain overlap another grain at this position?
+ * Test whether the proposed centre overlaps another grain.
  */
 function overlapsSand(
     particle,
     x,
     y
 ) {
-    const range =
-        particle.r * 2.2;
+    const diameter =
+        particle.r * 2;
 
     for (
         const other of nearbyParticles(
             x,
             y,
-            range
+            diameter + 1
         )
     ) {
         if (other === particle) {
@@ -256,9 +243,16 @@ function overlapsSand(
         const dy =
             y - other.y;
 
+        /*
+         * A tiny overlap is deliberately allowed.
+         *
+         * This avoids visible one-pixel gaps caused by
+         * floating-point positioning and canvas antialiasing.
+         */
         const minimum =
             particle.r +
-            other.r;
+            other.r -
+            0.05;
 
         if (
             dx * dx +
@@ -274,100 +268,109 @@ function overlapsSand(
 
 
 /* =========================================================
-   SETTLING
+   SUPPORT
 ========================================================= */
 
 
 /*
- * Find the exact Y position at which a grain can rest at X.
+ * Determine whether a settled grain is still supported.
  */
-function findRestingY(
-    particle,
-    x,
-    currentY
-) {
-    /*
-     * Terrain support.
-     */
+function hasSupport(particle) {
+    const terrainY =
+        terrainSupportY(
+            particle,
+            particle.x
+        );
+
+    if (
+        terrainY !== null &&
+        Math.abs(
+            terrainY - particle.y
+        ) < 0.15
+    ) {
+        return true;
+    }
+
+    const grainY =
+        grainSupportY(
+            particle,
+            particle.x
+        );
+
+    if (
+        grainY !== null &&
+        Math.abs(
+            grainY - particle.y
+        ) < 0.15
+    ) {
+        return true;
+    }
+
+    return false;
+}
+
+
+/*
+ * Put a grain exactly onto its support.
+ */
+function settle(particle, x) {
     const terrainY =
         terrainSupportY(
             particle,
             x
         );
 
-    let supportY =
-        terrainY === null
-            ? Infinity
-            : terrainY - particle.r;
-
-
-    /*
-     * Sand support.
-     */
-    const grain =
+    const grainY =
         grainSupportY(
             particle,
-            x,
-            currentY
+            x
         );
 
-    if (grain) {
-        supportY =
-            Math.min(
-                supportY,
-                grain.y -
-                grain.r -
-                particle.r
-            );
+    let y = Infinity;
+
+    if (terrainY !== null) {
+        y = Math.min(
+            y,
+            terrainY
+        );
     }
 
-
-    if (
-        supportY === Infinity
-    ) {
-        return null;
+    if (grainY !== null) {
+        y = Math.min(
+            y,
+            grainY
+        );
     }
 
-
-    /*
-     * The proposed resting position must actually be
-     * collision-free.
-     */
-    if (
-        hitsTerrain(
-            particle,
-            x,
-            supportY - 0.01
-        )
-    ) {
-        return null;
+    if (y === Infinity) {
+        return false;
     }
 
+    particle.x = x;
+    particle.y = y;
 
-    if (
-        overlapsSand(
-            particle,
-            x,
-            supportY
-        )
-    ) {
-        return null;
-    }
+    particle.vx = 0;
+    particle.vy = 0;
 
+    particle.supported = true;
 
-    return supportY;
+    return true;
 }
 
 
+/* =========================================================
+   SIDEWAYS SETTLING
+========================================================= */
+
+
 /*
- * Try to settle the grain one diameter to either side.
+ * Try to move one grain diameter left or right.
  *
- * We only accept the move if the new position has a real
- * support underneath it. This is what makes the pile stable
- * instead of jittery.
+ * We do not continuously slide the grain. It either finds
+ * a valid resting position or stays where it is.
  */
-function trySettleSideways(particle) {
-    const step =
+function trySidewaysSettle(particle) {
+    const diameter =
         particle.r * 2;
 
     const directions =
@@ -375,13 +378,15 @@ function trySettleSideways(particle) {
             ? [-1, 1]
             : [1, -1];
 
-    for (const direction of directions) {
+    for (
+        const direction of directions
+    ) {
         const x =
             particle.x +
-            direction * step;
+            direction * diameter;
 
         /*
-         * The candidate must be clear at its current height.
+         * The candidate position itself must be clear.
          */
         if (
             hitsTerrain(
@@ -404,37 +409,17 @@ function trySettleSideways(particle) {
         }
 
         /*
-         * There must be something below this new position.
+         * A sideways move is only allowed if the grain
+         * can immediately settle at the new position.
          */
-        const restingY =
-            findRestingY(
+        if (
+            settle(
                 particle,
-                x,
-                particle.y + CELL
-            );
-
-        if (
-            restingY === null
+                x
+            )
         ) {
-            continue;
+            return true;
         }
-
-        /*
-         * Don't allow a sideways move to jump upward.
-         */
-        if (
-            restingY >
-            particle.y + particle.r * 2
-        ) {
-            continue;
-        }
-
-        particle.x = x;
-        particle.y = restingY;
-        particle.vy = 0;
-        particle.supported = true;
-
-        return true;
     }
 
     return false;
@@ -442,7 +427,7 @@ function trySettleSideways(particle) {
 
 
 /* =========================================================
-   SPAWNING
+   SPAWN
 ========================================================= */
 
 export function spawnSand(
@@ -479,24 +464,25 @@ export function spawnSand(
             x:
                 x +
                 (
-                    Math.random() - 0.5
-                ) * 0.8,
+                    Math.random() -
+                    0.5
+                ) * 0.5,
 
             y:
                 y +
                 (
-                    Math.random() - 0.5
-                ) * 0.8,
+                    Math.random() -
+                    0.5
+                ) * 0.5,
 
             vx: 0,
-
             vy: 0,
 
-            r:
-                SAND_GRAIN_SIZE +
-                (
-                    Math.random() - 0.5
-                ) * 0.08,
+            /*
+             * IMPORTANT:
+             * Every grain has exactly the same radius.
+             */
+            r: SAND_GRAIN_SIZE,
 
             supported: false
         });
@@ -515,7 +501,6 @@ export function updateSand() {
 
     const STEPS = 4;
 
-
     for (
         let step = 0;
         step < STEPS;
@@ -523,44 +508,41 @@ export function updateSand() {
     ) {
         rebuildBuckets();
 
-
         /*
-         * Process bottom grains first.
-         *
-         * Once a lower grain has settled, grains above it
-         * can use it as support during the same update.
+         * Process lower grains first.
          */
         sand.sort(
             (a, b) =>
                 b.y - a.y
         );
 
-
         for (const particle of sand) {
 
             /*
-             * Supported grains are deliberately left alone.
+             * A supported grain is completely stationary.
              *
-             * This is important: settled grains should not
-             * continually re-evaluate their position and jitter.
+             * This is the main change that removes jitter.
              */
-            if (
-                particle.supported
-            ) {
-                continue;
+            if (particle.supported) {
+                if (hasSupport(particle)) {
+                    continue;
+                }
+
+                particle.supported = false;
+                particle.vy = 0;
             }
 
 
-            /*
-             * Gravity.
-             */
+            /* -------------------------------------------------
+               GRAVITY
+            ------------------------------------------------- */
+
             particle.vy =
                 Math.min(
                     particle.vy +
                     SAND_GRAVITY,
                     SAND_MAX_FALL_SPEED
                 );
-
 
             const nextY =
                 particle.y +
@@ -591,11 +573,11 @@ export function updateSand() {
 
 
             /* -------------------------------------------------
-               OBSTACLE — TRY TO FLOW AROUND IT
+               TRY TO FLOW LEFT/RIGHT
             ------------------------------------------------- */
 
             if (
-                trySettleSideways(
+                trySidewaysSettle(
                     particle
                 )
             ) {
@@ -604,63 +586,27 @@ export function updateSand() {
 
 
             /* -------------------------------------------------
-               SETTLE ON TERRAIN
+               SETTLE VERTICALLY
             ------------------------------------------------- */
-
-            const terrainY =
-                terrainSupportY(
-                    particle,
-                    particle.x
-                );
 
             if (
-                terrainY !== null
-            ) {
-                particle.y =
-                    terrainY -
-                    particle.r;
-
-                particle.vy = 0;
-                particle.supported = true;
-
-                continue;
-            }
-
-
-            /* -------------------------------------------------
-               SETTLE ON ANOTHER GRAIN
-            ------------------------------------------------- */
-
-            const grain =
-                grainSupportY(
+                settle(
                     particle,
-                    particle.x,
-                    nextY
-                );
-
-            if (grain) {
-                particle.y =
-                    grain.y -
-                    grain.r -
-                    particle.r;
-
-                particle.vy = 0;
-                particle.supported = true;
-
+                    particle.x
+                )
+            ) {
                 continue;
             }
 
 
             /*
-             * If we reached this point, don't let the particle
-             * accumulate energy while stuck.
+             * We are blocked but couldn't find an exact
+             * support position. Stop the particle rather than
+             * letting it repeatedly bounce.
              */
             particle.vy = 0;
         }
     }
-
-
-    rebuildBuckets();
 }
 
 
@@ -712,13 +658,11 @@ export function collectSand(
         }
     }
 
-
     candidates.sort(
         (a, b) =>
             a.distance -
             b.distance
     );
-
 
     const amount =
         Math.min(
@@ -726,15 +670,12 @@ export function collectSand(
             candidates.length
         );
 
-
     if (!amount) {
         return;
     }
 
-
     /*
-     * Remove highest indexes first so that removing one
-     * particle doesn't invalidate the remaining indexes.
+     * Remove highest indexes first.
      */
     for (
         let i = amount - 1;
@@ -747,13 +688,12 @@ export function collectSand(
         );
     }
 
-
     addSand(amount);
 }
 
 
 /* =========================================================
-   DROPPING
+   DROP
 ========================================================= */
 
 export function dropSand(
