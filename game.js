@@ -1,16 +1,16 @@
 "use strict";
 
+/*
+===========================================================
+SANDWORKS
+===========================================================
+*/
+
+const GAME_VERSION = "v0.4.1";
+
 
 /* =========================================================
-   SANDWORKS
-   Game logic
-========================================================= */
-
-const GAME_VERSION = "v0.4.0";
-
-
-/* =========================================================
-   CONFIGURATION
+   CONFIG
 ========================================================= */
 
 const CELL = 12;
@@ -32,27 +32,22 @@ const COLLECT_RADIUS = 25;
 
 const COLLECT_PER_TAP = 35;
 
-const DROP_GRAINS = 32;
+const DROP_GRAINS = 42;
 
 
 /* =========================================================
    CANVAS
 ========================================================= */
 
-const canvas =
-  document.getElementById("game");
-
-const ctx =
-  canvas.getContext("2d");
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
 
 ctx.imageSmoothingEnabled = false;
 
 let screenW = 0;
 let screenH = 0;
 
-
 function resize() {
-
   screenW = window.innerWidth;
   screenH = window.innerHeight;
 
@@ -60,17 +55,12 @@ function resize() {
   canvas.height = screenH;
 }
 
-
-window.addEventListener(
-  "resize",
-  resize
-);
-
+window.addEventListener("resize", resize);
 resize();
 
 
 /* =========================================================
-   VERSION DISPLAY
+   VERSION
 ========================================================= */
 
 document.getElementById("version").textContent =
@@ -101,15 +91,11 @@ const grass =
     WORLD_WIDTH * WORLD_HEIGHT
   );
 
-
 function index(x, y) {
-
   return y * WORLD_WIDTH + x;
 }
 
-
 function insideWorld(x, y) {
-
   return (
     x >= 0 &&
     x < WORLD_WIDTH &&
@@ -118,9 +104,7 @@ function insideWorld(x, y) {
   );
 }
 
-
 function getTerrain(x, y) {
-
   if (!insideWorld(x, y)) {
     return BEDROCK;
   }
@@ -128,9 +112,7 @@ function getTerrain(x, y) {
   return terrain[index(x, y)];
 }
 
-
 function setTerrain(x, y, material) {
-
   if (!insideWorld(x, y)) {
     return;
   }
@@ -140,12 +122,11 @@ function setTerrain(x, y, material) {
 
 
 /* =========================================================
-   NATURAL SURFACE
+   TERRAIN GENERATION
 ========================================================= */
 
 const surfaceHeights =
   new Int16Array(WORLD_WIDTH);
-
 
 for (let x = 0; x < WORLD_WIDTH; x++) {
 
@@ -172,10 +153,6 @@ for (let x = 0; x < WORLD_WIDTH; x++) {
 }
 
 
-/* =========================================================
-   GENERATE TERRAIN
-========================================================= */
-
 for (let x = 0; x < WORLD_WIDTH; x++) {
 
   const surface =
@@ -191,9 +168,7 @@ for (let x = 0; x < WORLD_WIDTH; x++) {
 
       setTerrain(x, y, DIRT);
 
-    } else if (
-      y < WORLD_HEIGHT - 7
-    ) {
+    } else if (y < WORLD_HEIGHT - 7) {
 
       setTerrain(x, y, STONE);
 
@@ -203,28 +178,27 @@ for (let x = 0; x < WORLD_WIDTH; x++) {
     }
   }
 
-  if (
-    getTerrain(x, surface) === DIRT
-  ) {
-
-    grass[index(x, surface)] = 1;
-  }
+  grass[index(x, surface)] = 1;
 }
 
 
 /* =========================================================
-   SAND PARTICLES
+   SAND
 ========================================================= */
 
 const sandParticles = [];
 
+
+/*
+  Sand uses a spatial hash so we can check nearby grains
+  without comparing every grain against every other grain.
+*/
+
 const sandHash = new Map();
 
-const SAND_HASH_SIZE = 5;
-
+const SAND_HASH_SIZE = 8;
 
 function hashKey(x, y) {
-
   return (
     Math.floor(x / SAND_HASH_SIZE) +
     "," +
@@ -232,34 +206,9 @@ function hashKey(x, y) {
   );
 }
 
-
 function clearSandHash() {
-
   sandHash.clear();
 }
-
-
-function addToSandHash(particle, particleIndex) {
-
-  const key =
-    hashKey(
-      particle.x,
-      particle.y
-    );
-
-  let bucket =
-    sandHash.get(key);
-
-  if (!bucket) {
-
-    bucket = [];
-
-    sandHash.set(key, bucket);
-  }
-
-  bucket.push(particleIndex);
-}
-
 
 function buildSandHash() {
 
@@ -271,10 +220,29 @@ function buildSandHash() {
     i++
   ) {
 
-    addToSandHash(
-      sandParticles[i],
-      i
-    );
+    const particle =
+      sandParticles[i];
+
+    const key =
+      hashKey(
+        particle.x,
+        particle.y
+      );
+
+    let bucket =
+      sandHash.get(key);
+
+    if (!bucket) {
+
+      bucket = [];
+
+      sandHash.set(
+        key,
+        bucket
+      );
+    }
+
+    bucket.push(i);
   }
 }
 
@@ -297,14 +265,6 @@ function spawnSand(
     return;
   }
 
-  const baseX =
-    worldX * CELL +
-    CELL / 2;
-
-  const baseY =
-    worldY * CELL +
-    CELL / 2;
-
   const remaining =
     MAX_SAND_PARTICLES -
     sandParticles.length;
@@ -315,43 +275,53 @@ function spawnSand(
       remaining
     );
 
+  const baseX =
+    worldX * CELL +
+    CELL / 2;
+
+  const baseY =
+    worldY * CELL +
+    CELL / 2;
+
+
   for (let i = 0; i < amount; i++) {
 
-    const spread =
-      burst
-        ? 5 + Math.random() * 6
-        : 3 + Math.random() * 5;
+    /*
+      Keep grains small and spread them slightly,
+      but DON'T give them a large upward velocity.
+      Gravity should immediately pull them down.
+    */
 
     sandParticles.push({
 
       x:
         baseX +
-        (Math.random() - 0.5) *
-        spread,
+        (Math.random() - 0.5) * 7,
 
       y:
         baseY +
-        (Math.random() - 0.5) *
-        spread,
+        (Math.random() - 0.5) * 5,
 
       vx:
         burst
-          ? (Math.random() - 0.5) * 1.3
-          : (Math.random() - 0.5) * 0.6,
+          ? (Math.random() - 0.5) * 0.35
+          : (Math.random() - 0.5) * 0.25,
 
       vy:
         burst
-          ? -Math.random() * 1.2
-          : -Math.random() * 0.5,
+          ? Math.random() * 0.3
+          : Math.random() * 0.15,
 
       size:
         0.65 +
-        Math.random() * 0.75,
+        Math.random() * 0.7,
+
+      settled: false,
 
       colour:
         Math.random() < 0.45
           ? "#d8ad45"
-          : Math.random() < 0.7
+          : Math.random() < 0.72
             ? "#e5bd54"
             : "#f0d06c"
     });
@@ -363,141 +333,124 @@ function spawnSand(
    TERRAIN COLLISION
 ========================================================= */
 
-function terrainBlocked(
-  x,
-  y,
-  radius
+/*
+  This deliberately uses the grain's CENTRE rather than
+  treating the whole grain as a large collision circle.
+
+  That prevents a newly mined grain from getting stuck
+  against the side of a neighbouring dirt block.
+*/
+
+function solidAtPixel(x, y) {
+
+  const tx =
+    Math.floor(x / CELL);
+
+  const ty =
+    Math.floor(y / CELL);
+
+  return getTerrain(tx, ty) !== AIR;
+}
+
+
+function sandHitsGround(
+  particle,
+  proposedY
 ) {
 
-  const minX =
-    Math.floor(
-      (x - radius) / CELL
-    );
+  /*
+    Check just below the grain.
+  */
 
-  const maxX =
-    Math.floor(
-      (x + radius) / CELL
-    );
+  const bottom =
+    proposedY +
+    particle.size +
+    0.8;
 
-  const minY =
-    Math.floor(
-      (y - radius) / CELL
-    );
+  return solidAtPixel(
+    particle.x,
+    bottom
+  );
+}
 
-  const maxY =
-    Math.floor(
-      (y + radius) / CELL
-    );
 
-  for (
-    let ty = minY;
-    ty <= maxY;
-    ty++
-  ) {
+function sandHitsSide(
+  particle,
+  proposedX,
+  proposedY
+) {
 
-    for (
-      let tx = minX;
-      tx <= maxX;
-      tx++
-    ) {
+  const left =
+    proposedX -
+    particle.size;
 
-      if (
-        getTerrain(tx, ty) === AIR
-      ) {
-        continue;
-      }
+  const right =
+    proposedX +
+    particle.size;
 
-      const left =
-        tx * CELL;
+  const top =
+    proposedY -
+    particle.size;
 
-      const right =
-        left + CELL;
+  const bottom =
+    proposedY +
+    particle.size;
 
-      const top =
-        ty * CELL;
-
-      const bottom =
-        top + CELL;
-
-      const nearestX =
-        Math.max(
-          left,
-          Math.min(x, right)
-        );
-
-      const nearestY =
-        Math.max(
-          top,
-          Math.min(y, bottom)
-        );
-
-      const dx =
-        x - nearestX;
-
-      const dy =
-        y - nearestY;
-
-      if (
-        dx * dx +
-        dy * dy <=
-        radius * radius
-      ) {
-
-        return true;
-      }
-    }
-  }
-
-  return false;
+  return (
+    solidAtPixel(left, top) ||
+    solidAtPixel(left, bottom) ||
+    solidAtPixel(right, top) ||
+    solidAtPixel(right, bottom)
+  );
 }
 
 
 /* =========================================================
-   SAND COLLISION
+   SAND / SAND COLLISION
 ========================================================= */
 
-function sandCollision(
+function sandParticleCollision(
   particle,
   particleIndex,
   proposedX,
   proposedY
 ) {
 
-  const searchRadius = 7;
+  const radius = 7;
 
-  const minHX =
+  const minX =
     Math.floor(
-      (proposedX - searchRadius) /
+      (proposedX - radius) /
       SAND_HASH_SIZE
     );
 
-  const maxHX =
+  const maxX =
     Math.floor(
-      (proposedX + searchRadius) /
+      (proposedX + radius) /
       SAND_HASH_SIZE
     );
 
-  const minHY =
+  const minY =
     Math.floor(
-      (proposedY - searchRadius) /
+      (proposedY - radius) /
       SAND_HASH_SIZE
     );
 
-  const maxHY =
+  const maxY =
     Math.floor(
-      (proposedY + searchRadius) /
+      (proposedY + radius) /
       SAND_HASH_SIZE
     );
 
   for (
-    let hy = minHY;
-    hy <= maxHY;
+    let hy = minY;
+    hy <= maxY;
     hy++
   ) {
 
     for (
-      let hx = minHX;
-      hx <= maxHX;
+      let hx = minX;
+      hx <= maxX;
       hx++
     ) {
 
@@ -530,15 +483,17 @@ function sandCollision(
         }
 
         const dx =
-          proposedX - other.x;
+          proposedX -
+          other.x;
 
         const dy =
-          proposedY - other.y;
+          proposedY -
+          other.y;
 
         const minimumDistance =
           particle.size +
           other.size +
-          0.55;
+          0.35;
 
         if (
           dx * dx +
@@ -558,44 +513,6 @@ function sandCollision(
 
 
 /* =========================================================
-   CAN SAND MOVE
-========================================================= */
-
-function canSandMove(
-  particle,
-  particleIndex,
-  x,
-  y
-) {
-
-  if (
-    terrainBlocked(
-      x,
-      y,
-      particle.size
-    )
-  ) {
-
-    return false;
-  }
-
-  if (
-    sandCollision(
-      particle,
-      particleIndex,
-      x,
-      y
-    )
-  ) {
-
-    return false;
-  }
-
-  return true;
-}
-
-
-/* =========================================================
    SAND PHYSICS
 ========================================================= */
 
@@ -607,8 +524,10 @@ function updateSand() {
     return;
   }
 
+
   /*
-    Process lower grains first.
+    Lower grains are processed first.
+    This helps piles settle naturally.
   */
 
   sandParticles.sort(
@@ -616,7 +535,9 @@ function updateSand() {
       b.y - a.y
   );
 
+
   buildSandHash();
+
 
   for (
     let i = 0;
@@ -627,73 +548,124 @@ function updateSand() {
     const particle =
       sandParticles[i];
 
-    particle.vy += 0.20;
+
+    /*
+      Once a grain has settled, still allow a little
+      movement if the pile beneath it changes.
+    */
+
+    particle.vy += 0.28;
 
     particle.vy =
       Math.min(
         particle.vy,
-        4.5
+        5.5
       );
 
-    particle.vx *= 0.985;
+    particle.vx *= 0.96;
 
-    const nextX =
-      particle.x +
-      particle.vx;
 
     const nextY =
       particle.y +
       particle.vy;
 
-    if (
-      canSandMove(
+
+    /* -----------------------------------------------------
+       FALL DOWN
+    ----------------------------------------------------- */
+
+    const hitsGround =
+      sandHitsGround(
+        particle,
+        nextY
+      );
+
+    const hitsSand =
+      sandParticleCollision(
         particle,
         i,
-        nextX,
+        particle.x,
         nextY
-      )
+      );
+
+
+    if (
+      !hitsGround &&
+      !hitsSand
     ) {
 
-      particle.x = nextX;
-      particle.y = nextY;
+      particle.y =
+        nextY;
+
+      particle.settled =
+        false;
 
       continue;
     }
 
-    particle.vy *= -0.05;
 
-    const slide =
-      0.7 +
-      Math.random() * 0.55;
+    /*
+      We hit something below.
+      Move the grain down until it is just above it.
+    */
+
+    particle.vy = 0;
+
+
+    /*
+      Try to slide down-left or down-right.
+      This creates the characteristic loose sand pile.
+    */
+
+    const slideDistance =
+      1.0 +
+      Math.random() * 1.8;
+
 
     const leftX =
-      particle.x - slide;
+      particle.x -
+      slideDistance;
 
     const rightX =
-      particle.x + slide;
+      particle.x +
+      slideDistance;
 
     const slideY =
-      particle.y + 0.7;
+      particle.y +
+      0.8;
 
-    const canLeft =
-      canSandMove(
+
+    const leftBlocked =
+      sandHitsSide(
+        particle,
+        leftX,
+        slideY
+      ) ||
+      sandParticleCollision(
         particle,
         i,
         leftX,
         slideY
       );
 
-    const canRight =
-      canSandMove(
+
+    const rightBlocked =
+      sandHitsSide(
+        particle,
+        rightX,
+        slideY
+      ) ||
+      sandParticleCollision(
         particle,
         i,
         rightX,
         slideY
       );
 
+
     if (
-      canLeft &&
-      canRight
+      !leftBlocked &&
+      !rightBlocked
     ) {
 
       if (
@@ -709,32 +681,66 @@ function updateSand() {
           rightX;
       }
 
-    } else if (canLeft) {
+      particle.y =
+        slideY;
+
+      particle.settled =
+        false;
+
+      continue;
+    }
+
+
+    if (!leftBlocked) {
 
       particle.x =
         leftX;
 
-    } else if (canRight) {
+      particle.y =
+        slideY;
+
+      particle.settled =
+        false;
+
+      continue;
+    }
+
+
+    if (!rightBlocked) {
 
       particle.x =
         rightX;
 
-    } else {
+      particle.y =
+        slideY;
 
-      particle.vx *= 0.25;
-      particle.vy = 0;
+      particle.settled =
+        false;
+
+      continue;
     }
 
-    if (
-      Math.abs(
-        particle.vx
-      ) < 0.05
-    ) {
 
-      particle.vx =
-        (Math.random() - 0.5) *
-        0.08;
-    }
+    /*
+      Nothing below or to either side will accept the grain.
+      It has settled.
+    */
+
+    particle.settled = true;
+
+    particle.vx *= 0.2;
+
+    particle.vy = 0;
+  }
+
+
+  /*
+    Keep grains inside the world.
+  */
+
+  for (
+    const particle of sandParticles
+  ) {
 
     particle.x =
       Math.max(
@@ -742,6 +748,15 @@ function updateSand() {
         Math.min(
           WORLD_WIDTH * CELL - 1,
           particle.x
+        )
+      );
+
+    particle.y =
+      Math.max(
+        1,
+        Math.min(
+          WORLD_HEIGHT * CELL - 2,
+          particle.y
         )
       );
   }
@@ -790,8 +805,7 @@ function updateInventoryUI() {
    ACTION MODES
 ========================================================= */
 
-let currentMode =
-  "mine";
+let currentMode = "mine";
 
 
 const hints = {
@@ -872,13 +886,9 @@ function isExposed(x, y) {
   }
 
   return (
-
     getTerrain(x + 1, y) === AIR ||
-
     getTerrain(x - 1, y) === AIR ||
-
     getTerrain(x, y + 1) === AIR ||
-
     getTerrain(x, y - 1) === AIR
   );
 }
@@ -911,6 +921,7 @@ function mineCircular(
     Math.ceil(
       centerY + radius
     );
+
 
   for (
     let y = minY;
@@ -957,11 +968,13 @@ function mineBlock(x, y) {
   const material =
     getTerrain(x, y);
 
+
   if (
     material === AIR
   ) {
     return;
   }
+
 
   /*
     Only exposed material can be mined.
@@ -974,7 +987,9 @@ function mineBlock(x, y) {
   }
 
 
-  /* DIRT */
+  /* -------------------------------------------------------
+     DIRT -> SAND
+  ------------------------------------------------------- */
 
   if (
     material === DIRT
@@ -990,6 +1005,7 @@ function mineBlock(x, y) {
 
     dirtConversion++;
 
+
     if (
       dirtConversion >=
       DIRT_TO_SAND
@@ -997,6 +1013,11 @@ function mineBlock(x, y) {
 
       dirtConversion -=
         DIRT_TO_SAND;
+
+      /*
+        Sand is created at the actual mined location.
+        It will now fall immediately.
+      */
 
       spawnSand(
         x,
@@ -1010,7 +1031,9 @@ function mineBlock(x, y) {
   }
 
 
-  /* STONE */
+  /* -------------------------------------------------------
+     STONE
+  ------------------------------------------------------- */
 
   if (
     material === STONE
@@ -1024,7 +1047,10 @@ function mineBlock(x, y) {
 
     grass[index(x, y)] = 0;
 
-    spawnStoneDust(x, y);
+    spawnStoneDust(
+      x,
+      y
+    );
   }
 }
 
@@ -1130,6 +1156,7 @@ function updateStoneDust() {
 
     particle.life--;
 
+
     if (
       particle.life <= 0
     ) {
@@ -1144,7 +1171,7 @@ function updateStoneDust() {
 
 
 /* =========================================================
-   COLLECT
+   COLLECT SAND
 ========================================================= */
 
 function collectSand(
@@ -1166,6 +1193,7 @@ function collectSand(
     return;
   }
 
+
   const targetX =
     worldX * CELL +
     CELL / 2;
@@ -1180,7 +1208,9 @@ function collectSand(
   const radiusSquared =
     radius * radius;
 
-  const collected = [];
+
+  const candidates = [];
+
 
   for (
     let i = 0;
@@ -1199,26 +1229,30 @@ function collectSand(
       particle.y -
       targetY;
 
+
     if (
       dx * dx +
       dy * dy <=
       radiusSquared
     ) {
 
-      collected.push(i);
+      candidates.push(i);
     }
   }
+
 
   const available =
     inventory.capacity -
     inventory.amount;
 
+
   const amountToCollect =
     Math.min(
       COLLECT_PER_TAP,
       available,
-      collected.length
+      candidates.length
     );
+
 
   if (
     amountToCollect <= 0
@@ -1226,7 +1260,8 @@ function collectSand(
     return;
   }
 
-  collected.sort(
+
+  candidates.sort(
     (a, b) => {
 
       const pa =
@@ -1236,34 +1271,42 @@ function collectSand(
         sandParticles[b];
 
       const dax =
-        pa.x - targetX;
+        pa.x -
+        targetX;
 
       const day =
-        pa.y - targetY;
+        pa.y -
+        targetY;
 
       const dbx =
-        pb.x - targetX;
+        pb.x -
+        targetX;
 
       const dby =
-        pb.y - targetY;
+        pb.y -
+        targetY;
+
 
       return (
         dax * dax +
         day * day
-      ) - (
+      ) -
+      (
         dbx * dbx +
         dby * dby
       );
     }
   );
 
+
   const removeSet =
     new Set(
-      collected.slice(
+      candidates.slice(
         0,
         amountToCollect
       )
     );
+
 
   for (
     let i =
@@ -1285,17 +1328,20 @@ function collectSand(
     }
   }
 
-  inventory.type = "sand";
+
+  inventory.type =
+    "sand";
 
   inventory.amount +=
     amountToCollect;
+
 
   updateInventoryUI();
 }
 
 
 /* =========================================================
-   DROP
+   DROP SAND
 ========================================================= */
 
 function dropSand(
@@ -1315,6 +1361,12 @@ function dropSand(
     return;
   }
 
+
+  /*
+    Drop a substantial handful.
+    Each grain then falls independently.
+  */
+
   spawnSand(
     worldX,
     worldY,
@@ -1322,27 +1374,19 @@ function dropSand(
     false
   );
 
-  if (
-    inventory.amount >= 10
-  ) {
-
-    spawnSand(
-      worldX,
-      worldY,
-      10,
-      false
-    );
-  }
 
   inventory.amount--;
+
 
   if (
     inventory.amount <= 0
   ) {
 
     inventory.type = null;
+
     inventory.amount = 0;
   }
+
 
   updateInventoryUI();
 }
@@ -1354,6 +1398,7 @@ function dropSand(
 
 let cameraX = 0;
 let cameraY = 0;
+
 let zoom = 1;
 
 
@@ -1371,6 +1416,7 @@ function clampCamera() {
   const visibleH =
     screenH / zoom;
 
+
   cameraX =
     Math.max(
       0,
@@ -1382,6 +1428,7 @@ function clampCamera() {
         )
       )
     );
+
 
   cameraY =
     Math.max(
@@ -1439,6 +1486,7 @@ canvas.addEventListener(
   event => {
 
     pointerDown = true;
+
     dragging = false;
 
     lastPointerX =
@@ -1462,6 +1510,7 @@ canvas.addEventListener(
       return;
     }
 
+
     const dx =
       event.clientX -
       lastPointerX;
@@ -1470,6 +1519,7 @@ canvas.addEventListener(
       event.clientY -
       lastPointerY;
 
+
     if (
       Math.abs(dx) > 3 ||
       Math.abs(dy) > 3
@@ -1477,6 +1527,7 @@ canvas.addEventListener(
 
       dragging = true;
     }
+
 
     if (
       currentMode === "pan" &&
@@ -1491,6 +1542,7 @@ canvas.addEventListener(
 
       clampCamera();
     }
+
 
     lastPointerX =
       event.clientX;
@@ -1516,7 +1568,9 @@ canvas.addEventListener(
       );
     }
 
+
     pointerDown = false;
+
     dragging = false;
   }
 );
@@ -1563,11 +1617,13 @@ canvas.addEventListener(
 
       event.preventDefault();
 
+
       const current =
         distance(
           event.touches[0],
           event.touches[1]
         );
+
 
       if (pinchStart) {
 
@@ -1578,6 +1634,7 @@ canvas.addEventListener(
             pinchStart
           );
 
+
         zoom =
           Math.max(
             0.7,
@@ -1586,6 +1643,7 @@ canvas.addEventListener(
               zoom
             )
           );
+
 
         clampCamera();
       }
@@ -1615,7 +1673,7 @@ function distance(a, b) {
 
 
 /* =========================================================
-   ACTION TAP
+   ACTION
 ========================================================= */
 
 function handleActionTap(
@@ -1629,6 +1687,7 @@ function handleActionTap(
       screenY
     );
 
+
   switch (currentMode) {
 
     case "mine":
@@ -1640,6 +1699,7 @@ function handleActionTap(
 
       break;
 
+
     case "collect":
 
       collectSand(
@@ -1648,6 +1708,7 @@ function handleActionTap(
       );
 
       break;
+
 
     case "drop":
 
@@ -1667,7 +1728,9 @@ function handleActionTap(
 
 function render() {
 
-  /* SKY */
+  /*
+    SKY
+  */
 
   const sky =
     ctx.createLinearGradient(
@@ -1676,6 +1739,7 @@ function render() {
       0,
       screenH
     );
+
 
   sky.addColorStop(
     0,
@@ -1692,7 +1756,9 @@ function render() {
     "#cceaf5"
   );
 
+
   ctx.fillStyle = sky;
+
 
   ctx.fillRect(
     0,
@@ -1704,10 +1770,12 @@ function render() {
 
   ctx.save();
 
+
   ctx.scale(
     zoom,
     zoom
   );
+
 
   ctx.translate(
     -cameraX,
@@ -1723,6 +1791,7 @@ function render() {
       )
     );
 
+
   const startY =
     Math.max(
       0,
@@ -1730,6 +1799,7 @@ function render() {
         cameraY / CELL
       )
     );
+
 
   const endX =
     Math.min(
@@ -1741,6 +1811,7 @@ function render() {
         ) / CELL
       )
     );
+
 
   const endY =
     Math.min(
@@ -1773,17 +1844,20 @@ function render() {
       const material =
         getTerrain(x, y);
 
+
       if (
         material === AIR
       ) {
         continue;
       }
 
+
       const px =
         x * CELL;
 
       const py =
         y * CELL;
+
 
       const seed =
         (
@@ -1792,7 +1866,9 @@ function render() {
         ) & 255;
 
 
-      /* DIRT */
+      /*
+        DIRT
+      */
 
       if (
         material === DIRT
@@ -1807,6 +1883,7 @@ function render() {
           CELL,
           CELL
         );
+
 
         if (
           seed % 7 === 0
@@ -1823,6 +1900,7 @@ function render() {
           );
         }
 
+
         if (
           seed % 11 === 0
         ) {
@@ -1837,6 +1915,7 @@ function render() {
             2
           );
         }
+
 
         if (
           seed % 19 === 0
@@ -1854,7 +1933,9 @@ function render() {
         }
 
 
-        /* GRASS */
+        /*
+          GRASS
+        */
 
         if (
           grass[index(x, y)]
@@ -1870,6 +1951,7 @@ function render() {
             3
           );
 
+
           if (
             seed % 3 === 0
           ) {
@@ -1884,6 +1966,7 @@ function render() {
               2
             );
           }
+
 
           if (
             seed % 5 === 0
@@ -1902,7 +1985,9 @@ function render() {
         }
 
 
-      /* STONE */
+      /*
+        STONE
+      */
 
       } else if (
         material === STONE
@@ -1918,6 +2003,7 @@ function render() {
           CELL
         );
 
+
         if (
           seed % 5 === 0
         ) {
@@ -1932,6 +2018,7 @@ function render() {
             2
           );
         }
+
 
         if (
           seed % 8 === 0
@@ -1949,7 +2036,9 @@ function render() {
         }
 
 
-      /* BEDROCK */
+      /*
+        BEDROCK
+      */
 
       } else if (
         material === BEDROCK
@@ -1964,6 +2053,7 @@ function render() {
           CELL,
           CELL
         );
+
 
         if (
           seed % 7 === 0
@@ -2013,10 +2103,13 @@ function render() {
       continue;
     }
 
+
     ctx.fillStyle =
       particle.colour;
 
+
     ctx.beginPath();
+
 
     ctx.arc(
       particle.x,
@@ -2025,6 +2118,7 @@ function render() {
       0,
       Math.PI * 2
     );
+
 
     ctx.fill();
   }
@@ -2046,6 +2140,7 @@ function render() {
         ${particle.life / 40}
       )`;
 
+
     ctx.fillRect(
       particle.x,
       particle.y,
@@ -2064,6 +2159,11 @@ function render() {
 ========================================================= */
 
 function gameLoop() {
+
+  /*
+    Run physics twice per frame for a more responsive
+    falling effect on mobile screens.
+  */
 
   updateSand();
   updateSand();
