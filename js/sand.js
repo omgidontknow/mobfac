@@ -19,12 +19,25 @@ import {
 export const sand = [];
 
 
-const HASH_SIZE = 7;
+/*
+ * Spatial hash used only for finding nearby grains.
+ *
+ * IMPORTANT:
+ * Buckets contain PARTICLE OBJECTS, not array indexes.
+ *
+ * This means sorting the sand array can never invalidate
+ * the collision information.
+ */
+
+const HASH_SIZE = 6;
 
 const buckets = new Map();
 
 
-function bucketKey(x, y) {
+function bucketKey(
+    x,
+    y
+) {
 
     return (
         Math.floor(x / HASH_SIZE) +
@@ -40,18 +53,13 @@ function rebuildBuckets() {
 
 
     for (
-        let i = 0;
-        i < sand.length;
-        i++
+        const particle of sand
     ) {
-
-        const p =
-            sand[i];
 
         const key =
             bucketKey(
-                p.x,
-                p.y
+                particle.x,
+                particle.y
             );
 
 
@@ -70,10 +78,16 @@ function rebuildBuckets() {
         }
 
 
-        bucket.push(i);
+        bucket.push(
+            particle
+        );
     }
 }
 
+
+/* =========================================================
+   TERRAIN COLLISION
+========================================================= */
 
 function terrainAtPixel(
     x,
@@ -81,21 +95,32 @@ function terrainAtPixel(
 ) {
 
     return getTerrain(
-        Math.floor(x / CELL),
-        Math.floor(y / CELL)
+        Math.floor(
+            x / CELL
+        ),
+        Math.floor(
+            y / CELL
+        )
     );
 }
 
 
 function hitsTerrain(
-    p,
+    particle,
     x,
     y
 ) {
 
     const r =
-        p.r;
+        particle.r;
 
+
+    /*
+     * Check the bottom edge and lower corners.
+     *
+     * This is intentionally conservative so grains cannot
+     * pass through terrain between simulation steps.
+     */
 
     return (
 
@@ -105,31 +130,174 @@ function hitsTerrain(
         ) !== 0 ||
 
         terrainAtPixel(
-            x + r,
+            x,
             y + r
         ) !== 0 ||
 
         terrainAtPixel(
-            x - r,
-            y
-        ) !== 0 ||
-
-        terrainAtPixel(
             x + r,
-            y
+            y + r
         ) !== 0
     );
 }
 
 
-function nearbySand(
-    p,
-    x,
-    y,
-    ignoreIndex
+/*
+ * Find the terrain directly underneath a particle.
+ */
+
+function terrainSupportY(
+    particle
 ) {
 
-    const range = 6;
+    const bottom =
+        particle.y +
+        particle.r;
+
+
+    const cellY =
+        Math.floor(
+            bottom / CELL
+        );
+
+
+    const leftX =
+        Math.floor(
+            (
+                particle.x -
+                particle.r
+            ) / CELL
+        );
+
+
+    const centreX =
+        Math.floor(
+            particle.x / CELL
+        );
+
+
+    const rightX =
+        Math.floor(
+            (
+                particle.x +
+                particle.r
+            ) / CELL
+        );
+
+
+    const cells = [
+        [leftX, cellY],
+        [centreX, cellY],
+        [rightX, cellY]
+    ];
+
+
+    let highestTop =
+        Infinity;
+
+
+    for (
+        const [
+            x,
+            y
+        ] of cells
+    ) {
+
+        if (
+            getTerrain(
+                x,
+                y
+            ) !== 0
+        ) {
+
+            const top =
+                y * CELL;
+
+
+            highestTop =
+                Math.min(
+                    highestTop,
+                    top
+                );
+        }
+    }
+
+
+    return highestTop === Infinity
+        ? null
+        : highestTop;
+}
+
+
+/*
+ * If a particle is intersecting the top of terrain,
+ * put it exactly on the surface rather than leaving a
+ * visible sub-pixel gap.
+ */
+
+function settleOnTerrain(
+    particle
+) {
+
+    const top =
+        terrainSupportY(
+            particle
+        );
+
+
+    if (
+        top === null
+    ) {
+
+        return false;
+    }
+
+
+    const desiredY =
+        top -
+        particle.r;
+
+
+    if (
+        particle.y >=
+        desiredY - 0.5
+    ) {
+
+        particle.y =
+            desiredY;
+
+        particle.vy =
+            0;
+
+        return true;
+    }
+
+
+    return false;
+}
+
+
+/* =========================================================
+   SAND COLLISION
+========================================================= */
+
+
+/*
+ * Find a grain that is directly underneath the proposed
+ * position.
+ *
+ * Unlike the old implementation, this returns the actual
+ * particle rather than an array index.
+ */
+
+function supportingSand(
+    particle,
+    x,
+    y
+) {
+
+    const range =
+        5;
 
 
     const minX =
@@ -141,6 +309,7 @@ function nearbySand(
             HASH_SIZE
         );
 
+
     const maxX =
         Math.floor(
             (
@@ -150,6 +319,7 @@ function nearbySand(
             HASH_SIZE
         );
 
+
     const minY =
         Math.floor(
             (
@@ -158,6 +328,171 @@ function nearbySand(
             ) /
             HASH_SIZE
         );
+
+
+    const maxY =
+        Math.floor(
+            (
+                y +
+                range
+            ) /
+            HASH_SIZE
+        );
+
+
+    let best =
+        null;
+
+
+    let bestDistance =
+        Infinity;
+
+
+    for (
+        let by = minY;
+        by <= maxY;
+        by++
+    ) {
+
+        for (
+            let bx = minX;
+            bx <= maxX;
+            bx++
+        ) {
+
+            const bucket =
+                buckets.get(
+                    bx + "," + by
+                );
+
+
+            if (!bucket) {
+                continue;
+            }
+
+
+            for (
+                const other
+                of bucket
+            ) {
+
+                if (
+                    other ===
+                    particle
+                ) {
+
+                    continue;
+                }
+
+
+                /*
+                 * We only want a grain that is genuinely
+                 * underneath this particle.
+                 */
+
+                if (
+                    other.y <=
+                    particle.y
+                ) {
+
+                    continue;
+                }
+
+
+                const dx =
+                    Math.abs(
+                        x -
+                        other.x
+                    );
+
+
+                if (
+                    dx >
+                    particle.r +
+                    other.r
+                ) {
+
+                    continue;
+                }
+
+
+                const desiredY =
+                    other.y -
+                    particle.r -
+                    other.r;
+
+
+                const distance =
+                    Math.abs(
+                        y -
+                        desiredY
+                    );
+
+
+                if (
+                    distance <
+                    bestDistance
+                ) {
+
+                    best =
+                        other;
+
+                    bestDistance =
+                        distance;
+                }
+            }
+        }
+    }
+
+
+    return best;
+}
+
+
+/*
+ * Check whether the proposed position overlaps another
+ * grain.
+ */
+
+function sandCollision(
+    particle,
+    x,
+    y
+) {
+
+    const range =
+        5;
+
+
+    const minX =
+        Math.floor(
+            (
+                x -
+                range
+            ) /
+            HASH_SIZE
+        );
+
+
+    const maxX =
+        Math.floor(
+            (
+                x +
+                range
+            ) /
+            HASH_SIZE
+        );
+
+
+    const minY =
+        Math.floor(
+            (
+                y -
+                range
+            ) /
+            HASH_SIZE
+        );
+
 
     const maxY =
         Math.floor(
@@ -193,67 +528,55 @@ function nearbySand(
 
 
             for (
-                const otherIndex
+                const other
                 of bucket
             ) {
 
                 if (
-                    otherIndex ===
-                    ignoreIndex
+                    other ===
+                    particle
                 ) {
-                    continue;
-                }
 
-
-                const other =
-                    sand[
-                        otherIndex
-                    ];
-
-
-                if (!other) {
                     continue;
                 }
 
 
                 const dx =
-                    x - other.x;
+                    x -
+                    other.x;
+
 
                 const dy =
-                    y - other.y;
+                    y -
+                    other.y;
 
 
-                const distance =
-                    Math.sqrt(
-                        dx * dx +
-                        dy * dy
-                    );
+                const minimum =
+                    particle.r +
+                    other.r;
 
 
                 if (
-                    distance <
-                    p.r +
-                    other.r +
-                    0.2
+                    dx * dx +
+                    dy * dy <
+                    minimum *
+                    minimum
                 ) {
 
-                    return true;
+                    return other;
                 }
             }
         }
     }
 
 
-    return false;
+    return null;
 }
 
 
-/*
- * Add newly mined or dropped sand.
- *
- * Grains are created directly as individual particles.
- * There is no temporary square/clump representation.
- */
+/* =========================================================
+   SPAWNING
+========================================================= */
 
 export function spawnSand(
     cellX,
@@ -265,6 +588,7 @@ export function spawnSand(
         sand.length >=
         MAX_SAND
     ) {
+
         return;
     }
 
@@ -280,6 +604,7 @@ export function spawnSand(
     const x =
         cellX * CELL +
         CELL / 2;
+
 
     const y =
         cellY * CELL +
@@ -299,14 +624,14 @@ export function spawnSand(
                 (
                     Math.random() -
                     0.5
-                ) * 1.2,
+                ) * 0.8,
 
             y:
                 y +
                 (
                     Math.random() -
                     0.5
-                ) * 1.2,
+                ) * 0.8,
 
             vx: 0,
 
@@ -317,7 +642,7 @@ export function spawnSand(
                 (
                     Math.random() -
                     0.5
-                ) * 0.12,
+                ) * 0.08,
 
             supported: false
         });
@@ -325,47 +650,47 @@ export function spawnSand(
 }
 
 
-/*
- * Sand physics.
- *
- * The important behaviour here is:
- *
- * 1. Gravity is the dominant movement.
- * 2. Grains fall vertically whenever possible.
- * 3. When blocked, they only move a very small amount
- *    sideways.
- * 4. Large sideways searches have been removed.
- *
- * This allows sand to build vertically into pronounced
- * piles instead of immediately spreading into flat sheets.
- */
+/* =========================================================
+   PHYSICS
+========================================================= */
 
 export function updateSand() {
 
-    if (!sand.length) {
+    if (
+        !sand.length
+    ) {
+
         return;
     }
 
 
     /*
-     * Several small simulation steps per frame make
-     * newly created sand start falling immediately.
+     * Small simulation steps prevent grains from tunnelling
+     * through terrain and make newly mined sand fall
+     * immediately.
      */
+
+    const STEPS = 5;
+
 
     for (
         let step = 0;
-        step < 5;
+        step < STEPS;
         step++
     ) {
+
+        /*
+         * Rebuild using particle references.
+         */
 
         rebuildBuckets();
 
 
         /*
-         * Lower grains first.
+         * Process lower grains first.
          *
-         * This helps the supporting part of a pile settle
-         * before grains above it are processed.
+         * This lets the bottom of a pile settle before the
+         * grains above it are evaluated.
          */
 
         sand.sort(
@@ -375,233 +700,235 @@ export function updateSand() {
 
 
         for (
-            let i = 0;
-            i < sand.length;
-            i++
+            const particle
+            of sand
         ) {
 
-            const p =
-                sand[i];
+            /*
+             * Already resting grains still need to be checked.
+             *
+             * Terrain may have been mined away underneath them.
+             */
+
+            if (
+                particle.supported
+            ) {
+
+                const terrainSupport =
+                    terrainSupportY(
+                        particle
+                    );
+
+
+                const grainSupport =
+                    supportingSand(
+                        particle,
+                        particle.x,
+                        particle.y + 1
+                    );
+
+
+                if (
+                    terrainSupport === null &&
+                    !grainSupport
+                ) {
+
+                    particle.supported =
+                        false;
+
+                    particle.vy =
+                        0.5;
+                }
+            }
 
 
             /*
              * Gravity.
              */
 
-            p.vy =
+            particle.vy =
                 Math.min(
-                    p.vy +
+                    particle.vy +
                     SAND_GRAVITY,
                     SAND_MAX_FALL_SPEED
                 );
 
 
             /*
-             * FIRST CHOICE:
-             *
-             * Always try to fall directly down.
+             * Attempt vertical movement first.
              */
 
-            const fallX =
-                p.x;
-
-            const fallY =
-                p.y +
-                p.vy;
+            const nextY =
+                particle.y +
+                particle.vy;
 
 
-            const terrainBlocked =
-                hitsTerrain(
-                    p,
-                    fallX,
-                    fallY
-                );
-
-
-            const sandBlocked =
-                nearbySand(
-                    p,
-                    fallX,
-                    fallY,
-                    i
-                );
-
+            /*
+             * Terrain takes priority.
+             */
 
             if (
-                !terrainBlocked &&
-                !sandBlocked
+                hitsTerrain(
+                    particle,
+                    particle.x,
+                    nextY
+                )
             ) {
 
-                p.x =
-                    fallX;
+                /*
+                 * Snap directly onto the terrain surface.
+                 */
 
-                p.y =
-                    fallY;
+                const top =
+                    terrainSupportY(
+                        particle
+                    );
 
-                p.supported =
-                    false;
+
+                if (
+                    top !== null
+                ) {
+
+                    particle.y =
+                        top -
+                        particle.r;
+                }
+
+
+                particle.vy =
+                    0;
+
+                particle.supported =
+                    true;
+
+
+                /*
+                 * We have landed. Do not immediately
+                 * slide sideways in the same step.
+                 *
+                 * This is important for creating tall piles.
+                 */
 
                 continue;
             }
 
 
             /*
-             * The grain has reached the ground
-             * or another grain.
+             * Check for another sand grain.
              */
 
-            p.vy = 0;
+            const blockingGrain =
+                sandCollision(
+                    particle,
+                    particle.x,
+                    nextY
+                );
 
 
-            /*
-             * Only attempt a tiny sideways slide.
-             *
-             * Previously the physics searched several
-             * pixels sideways, which encouraged the sand
-             * to spread horizontally.
-             */
-
-            const directions =
-                Math.random() < 0.5
-                    ? [-1, 1]
-                    : [1, -1];
-
-
-            let moved =
-                false;
-
-
-            for (
-                const direction
-                of directions
+            if (
+                blockingGrain
             ) {
 
-                const slideX =
-                    p.x +
-                    direction *
-                    1.05;
-
-                const slideY =
-                    p.y +
-                    0.45;
-
+                /*
+                 * If the grain underneath us is genuinely
+                 * below, snap to its surface.
+                 */
 
                 if (
-                    !hitsTerrain(
-                        p,
-                        slideX,
-                        slideY
-                    ) &&
-                    !nearbySand(
-                        p,
-                        slideX,
-                        slideY,
-                        i
-                    )
+                    blockingGrain.y >
+                    particle.y
                 ) {
 
-                    p.x =
-                        slideX;
+                    particle.y =
+                        blockingGrain.y -
+                        blockingGrain.r -
+                        particle.r;
 
-                    p.y =
-                        slideY;
+                    particle.vy =
+                        0;
 
-                    p.supported =
-                        false;
-
-                    moved =
+                    particle.supported =
                         true;
 
-                    break;
+                    continue;
                 }
             }
 
 
             /*
-             * Nothing nearby can accept the grain.
-             *
-             * Leave it where it is. This is what allows
-             * grains to stack and piles to become higher.
+             * Nothing stopped the fall.
              */
 
-            if (!moved) {
+            particle.y =
+                nextY;
 
-                p.supported =
-                    true;
-            }
+            particle.supported =
+                false;
+
+
+            /*
+             * No sideways movement while airborne.
+             *
+             * This is a major change from the previous
+             * implementation.
+             */
+
+            continue;
         }
     }
 
 
     /*
-     * Safety pass.
+     * Final safety pass.
      *
-     * If support disappeared underneath a grain,
-     * make that grain fall again.
+     * Anything with no real support and no terrain beneath
+     * it is explicitly marked as falling.
      */
 
     rebuildBuckets();
 
 
     for (
-        let i = 0;
-        i < sand.length;
-        i++
+        const particle
+        of sand
     ) {
 
-        const p =
-            sand[i];
+        const terrainSupport =
+            terrainSupportY(
+                particle
+            );
+
+
+        const grainSupport =
+            supportingSand(
+                particle,
+                particle.x,
+                particle.y + 1
+            );
 
 
         if (
-            !hasSupport(
-                p,
-                i
-            )
+            terrainSupport === null &&
+            !grainSupport
         ) {
 
-            p.supported =
+            particle.supported =
                 false;
 
-            p.vy =
+
+            particle.vy =
                 Math.max(
-                    p.vy,
-                    0.8
+                    particle.vy,
+                    0.5
                 );
         }
     }
 }
 
 
-function hasSupport(
-    p,
-    index
-) {
-
-    if (
-        hitsTerrain(
-            p,
-            p.x,
-            p.y + 1
-        )
-    ) {
-
-        return true;
-    }
-
-
-    return nearbySand(
-        p,
-        p.x,
-        p.y + 1,
-        index
-    );
-}
-
-
-/*
- * Collect a wider area of sand.
- */
+/* =========================================================
+   COLLECTION
+========================================================= */
 
 export function collectSand(
     worldX,
@@ -611,6 +938,7 @@ export function collectSand(
     const cx =
         worldX * CELL +
         CELL / 2;
+
 
     const cy =
         worldY * CELL +
@@ -626,20 +954,27 @@ export function collectSand(
         i++
     ) {
 
-        const p =
+        const particle =
             sand[i];
 
 
         const dx =
-            p.x - cx;
+            particle.x -
+            cx;
+
 
         const dy =
-            p.y - cy;
+            particle.y -
+            cy;
+
+
+        const distanceSquared =
+            dx * dx +
+            dy * dy;
 
 
         if (
-            dx * dx +
-            dy * dy <=
+            distanceSquared <=
             COLLECT_RADIUS *
             COLLECT_RADIUS
         ) {
@@ -649,8 +984,7 @@ export function collectSand(
                 index: i,
 
                 distance:
-                    dx * dx +
-                    dy * dy
+                    distanceSquared
             });
         }
     }
@@ -670,13 +1004,17 @@ export function collectSand(
         );
 
 
-    if (!amount) {
+    if (
+        !amount
+    ) {
+
         return;
     }
 
 
     /*
-     * Remove closest grains.
+     * Remove from highest index downward so the indexes
+     * remain valid while splicing.
      */
 
     for (
@@ -692,13 +1030,15 @@ export function collectSand(
     }
 
 
-    addSand(amount);
+    addSand(
+        amount
+    );
 }
 
 
-/*
- * Drop sand at a location.
- */
+/* =========================================================
+   DROPPING
+========================================================= */
 
 export function dropSand(
     worldX,
