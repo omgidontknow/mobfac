@@ -979,7 +979,7 @@ function renderSand(
      */
 
     ctx.fillStyle =
-        "#dfb95b";
+        "#c47a24";
 
 
     for (
