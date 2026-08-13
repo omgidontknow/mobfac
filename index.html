@@ -1,66 +1,80 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    >
 
-  <meta
-    name="viewport"
-    content="width=device-width,
-             initial-scale=1,
-             maximum-scale=1,
-             user-scalable=no"
-  >
+    <title>Sandworks</title>
 
-  <title>Sandworks</title>
-
-  <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
 
-  <canvas id="game"></canvas>
+    <canvas id="game"></canvas>
 
-  <div id="ui">
-    <div class="panel game-title">
-      SANDWORKS
+    <div id="hud">
+
+        <div id="topbar">
+
+            <div id="inventory">
+                Inventory: Empty
+            </div>
+
+            <div id="version">
+                v0.7.0
+            </div>
+
+        </div>
+
+
+        <div id="hint">
+            Hold and drag to mine
+        </div>
+
+
+        <div id="actions">
+
+            <button
+                class="action selected"
+                data-mode="mine"
+            >
+                ⛏ Mine
+            </button>
+
+            <button
+                class="action"
+                data-mode="collect"
+            >
+                ✋ Collect
+            </button>
+
+            <button
+                class="action"
+                data-mode="drop"
+            >
+                🏖 Drop
+            </button>
+
+            <button
+                class="action"
+                data-mode="pan"
+            >
+                ✥ Move
+            </button>
+
+        </div>
+
     </div>
 
-    <div id="inventory" class="panel">
-      Inventory: Empty
-    </div>
-  </div>
 
-  <div id="actions">
-
-    <button class="action selected" data-mode="mine" type="button">
-      <span class="icon">⛏</span>
-      <span>Mine</span>
-    </button>
-
-    <button class="action" data-mode="collect" type="button">
-      <span class="icon">✋</span>
-      <span>Collect</span>
-    </button>
-
-    <button class="action" data-mode="drop" type="button">
-      <span class="icon">▼</span>
-      <span>Drop</span>
-    </button>
-
-    <button class="action" data-mode="pan" type="button">
-      <span class="icon">✥</span>
-      <span>Pan</span>
-    </button>
-
-  </div>
-
-  <div id="hint">
-    Mine exposed ground
-  </div>
-
-  <div id="version"></div>
-
-  <script src="game.js"></script>
+    <script
+        type="module"
+        src="js/main.js"
+    ></script>
 
 </body>
 </html>
