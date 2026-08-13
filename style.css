@@ -1,0 +1,246 @@
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+
+  width: 100%;
+  height: 100%;
+
+  overflow: hidden;
+
+  background: #82cef4;
+
+  touch-action: none;
+
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+#game {
+  display: block;
+
+  width: 100vw;
+  height: 100vh;
+
+  image-rendering: pixelated;
+}
+
+
+/* =========================================================
+   TOP UI
+========================================================= */
+
+#ui {
+  position: fixed;
+
+  top: 10px;
+  left: 10px;
+  right: 10px;
+
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+
+  pointer-events: none;
+
+  z-index: 10;
+}
+
+.panel {
+  background: rgba(25, 29, 32, 0.84);
+
+  color: white;
+
+  border: 1px solid rgba(255, 255, 255, 0.22);
+
+  border-radius: 11px;
+
+  padding: 8px 12px;
+
+  font-size: 14px;
+
+  box-shadow:
+    0 3px 12px rgba(0, 0, 0, 0.15);
+
+  backdrop-filter: blur(5px);
+}
+
+.game-title {
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+
+/* =========================================================
+   ACTION BAR
+========================================================= */
+
+#actions {
+  position: fixed;
+
+  left: 50%;
+  bottom: 20px;
+
+  transform: translateX(-50%);
+
+  display: flex;
+
+  gap: 7px;
+
+  padding: 7px;
+
+  background: rgba(25, 29, 32, 0.87);
+
+  border: 1px solid rgba(255, 255, 255, 0.2);
+
+  border-radius: 15px;
+
+  box-shadow:
+    0 5px 20px rgba(0, 0, 0, 0.25);
+
+  backdrop-filter: blur(7px);
+
+  z-index: 20;
+}
+
+.action {
+  border: 0;
+
+  min-width: 62px;
+  height: 54px;
+
+  border-radius: 11px;
+
+  background: rgba(255, 255, 255, 0.09);
+
+  color: rgba(255, 255, 255, 0.82);
+
+  font-size: 12px;
+
+  font-weight: 600;
+
+  cursor: pointer;
+
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: center;
+
+  justify-content: center;
+
+  gap: 2px;
+
+  touch-action: manipulation;
+
+  transition:
+    background 0.12s ease,
+    transform 0.08s ease;
+}
+
+.action .icon {
+  font-size: 21px;
+  line-height: 21px;
+}
+
+.action:active {
+  transform: scale(0.94);
+}
+
+.action.selected {
+  background: #e2ad3d;
+
+  color: #27200f;
+
+  box-shadow:
+    0 0 0 2px rgba(255, 215, 105, 0.28),
+    0 3px 10px rgba(0, 0, 0, 0.25);
+}
+
+
+/* =========================================================
+   HINT
+========================================================= */
+
+#hint {
+  position: fixed;
+
+  left: 50%;
+  bottom: 86px;
+
+  transform: translateX(-50%);
+
+  background: rgba(25, 29, 32, 0.75);
+
+  color: rgba(255, 255, 255, 0.9);
+
+  padding: 6px 10px;
+
+  border-radius: 8px;
+
+  font-size: 11px;
+
+  white-space: nowrap;
+
+  pointer-events: none;
+
+  z-index: 10;
+}
+
+
+/* =========================================================
+   VERSION
+========================================================= */
+
+#version {
+  position: fixed;
+
+  right: 7px;
+  bottom: 5px;
+
+  color: rgba(255, 255, 255, 0.38);
+
+  font-size: 9px;
+
+  font-family: monospace;
+
+  pointer-events: none;
+
+  user-select: none;
+
+  z-index: 30;
+}
+
+
+/* =========================================================
+   MOBILE
+========================================================= */
+
+@media (max-width: 430px) {
+
+  #actions {
+    bottom: 15px;
+
+    gap: 5px;
+
+    padding: 6px;
+  }
+
+  .action {
+    min-width: 59px;
+    height: 52px;
+  }
+
+  #hint {
+    bottom: 79px;
+  }
+}
