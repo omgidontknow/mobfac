@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport"
       content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Sand Factory</title>
+
+<title>Sandworks</title>
 
 <style>
 * {
@@ -14,98 +15,58 @@
 
 html, body {
   margin: 0;
+  padding: 0;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #11151a;
-  color: white;
-  font-family: Arial, sans-serif;
+  background: #78c8f5;
+  font-family: system-ui, sans-serif;
   touch-action: none;
 }
 
 #game {
   display: block;
-  width: 100%;
-  height: 100%;
-  background: #182028;
+  width: 100vw;
+  height: 100vh;
+  image-rendering: pixelated;
 }
 
 #ui {
   position: fixed;
-  inset: 0;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  justify-content: space-between;
   pointer-events: none;
 }
 
-.topbar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  padding: 10px;
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-}
-
 .panel {
-  background: rgba(20,25,30,.9);
-  border: 1px solid #39434d;
-  border-radius: 12px;
-  padding: 9px 12px;
-  box-shadow: 0 4px 15px rgba(0,0,0,.3);
-}
-
-.money {
-  color: #ffd34d;
-  font-weight: bold;
-}
-
-.bottom {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 8px;
-  display: flex;
-  justify-content: center;
-  gap: 7px;
-  flex-wrap: wrap;
-}
-
-button {
-  pointer-events: auto;
-  border: 1px solid #46515c;
-  background: #252e36;
+  background: rgba(20, 25, 30, 0.8);
   color: white;
-  border-radius: 12px;
-  min-width: 72px;
-  min-height: 48px;
-  padding: 8px 10px;
-  font-weight: bold;
-  font-size: 13px;
+  border: 2px solid rgba(255,255,255,.25);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 14px;
+  pointer-events: auto;
 }
 
-button:active {
-  transform: scale(.95);
-  background: #3a4650;
+#inventory {
+  min-width: 110px;
 }
 
-button.selected {
-  background: #c88b2b;
-  border-color: #ffd35a;
-  color: #111;
-}
-
-.help {
-  position: absolute;
+#hint {
+  position: fixed;
+  bottom: 12px;
   left: 50%;
-  bottom: 78px;
   transform: translateX(-50%);
-  background: rgba(0,0,0,.65);
+  background: rgba(20,25,30,.8);
+  color: white;
   padding: 8px 12px;
   border-radius: 10px;
-  font-size: 12px;
-  white-space: nowrap;
+  font-size: 13px;
+  text-align: center;
+  pointer-events: none;
 }
 </style>
 </head>
@@ -115,263 +76,214 @@ button.selected {
 <canvas id="game"></canvas>
 
 <div id="ui">
-
-  <div class="topbar">
-    <div class="panel">
-      💰 <span class="money" id="money">100</span>
-    </div>
-
-    <div class="panel">
-      🟨 Sand: <span id="sandCount">0</span>
-    </div>
+  <div class="panel">
+    Sandworks
   </div>
 
-  <div class="help">
-    Tap the world to place machines
+  <div id="inventory" class="panel">
+    Inventory: Empty
   </div>
+</div>
 
-  <div class="bottom">
-    <button id="sandBtn" class="selected">
-      🟨 Sand<br>$10
-    </button>
-
-    <button id="wallBtn">
-      🧱 Wall<br>$5
-    </button>
-
-    <button id="beltBtn">
-      ➡️ Belt<br>$20
-    </button>
-
-    <button id="sellBtn">
-      💰 Sell<br>$0
-    </button>
-
-    <button id="deleteBtn">
-      ❌ Delete
-    </button>
-  </div>
-
+<div id="hint">
+  Tap exposed dirt to mine • Tap sand to collect • Tap elsewhere to drop
 </div>
 
 <script>
+"use strict";
+
 /* =========================================================
-   SAND FACTORY 0.1
-   ========================================================= */
+   CONFIG
+========================================================= */
+
+const CELL = 12;
+
+const WORLD_WIDTH = 100;
+const WORLD_HEIGHT = 160;
+
+const GRAVITY_STEPS = 2;
+
+const DIRT_TO_SAND = 2;
+
+
+/* =========================================================
+   CANVAS
+========================================================= */
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-let W = 0;
-let H = 0;
+ctx.imageSmoothingEnabled = false;
+
+let screenW = 0;
+let screenH = 0;
 
 function resize() {
-  W = canvas.width = window.innerWidth * devicePixelRatio;
-  H = canvas.height = window.innerHeight * devicePixelRatio;
-
-  canvas.style.width = window.innerWidth + "px";
-  canvas.style.height = window.innerHeight + "px";
-
-  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  screenW = canvas.width = window.innerWidth;
+  screenH = canvas.height = window.innerHeight;
 }
 
 window.addEventListener("resize", resize);
 resize();
 
-/* ---------------------------------------------------------
-   WORLD
-   --------------------------------------------------------- */
 
-const CELL = 12;
+/* =========================================================
+   MATERIALS
+========================================================= */
 
-let cols = 0;
-let rows = 0;
+const AIR = 0;
+const DIRT = 1;
+const STONE = 2;
+const BEDROCK = 3;
 
-let grid = [];
-
-const EMPTY = 0;
 const SAND = 1;
-const WALL = 2;
-const BELT = 3;
-const SELL = 4;
 
-function createWorld() {
-  cols = Math.ceil(window.innerWidth / CELL);
-  rows = Math.ceil(window.innerHeight / CELL);
 
-  grid = Array.from(
-    { length: rows },
-    () => Array(cols).fill(EMPTY)
-  );
+/* =========================================================
+   TERRAIN
+========================================================= */
 
-  // Floor
-  for (let x = 0; x < cols; x++) {
-    grid[rows - 2][x] = WALL;
-    grid[rows - 1][x] = WALL;
-  }
+const terrain = new Uint8Array(
+  WORLD_WIDTH * WORLD_HEIGHT
+);
 
-  // Starting sand generator
-  for (let x = 8; x < 14; x++) {
-    grid[5][x] = SAND;
-  }
-
-  // Starting platform
-  for (let x = 5; x < 20; x++) {
-    grid[18][x] = WALL;
-  }
-
-  // Starting sell area
-  grid[17][18] = SELL;
+function index(x, y) {
+  return y * WORLD_WIDTH + x;
 }
 
-createWorld();
-
-/* ---------------------------------------------------------
-   ECONOMY
-   --------------------------------------------------------- */
-
-let money = 100;
-let sandSold = 0;
-
-const prices = {
-  [SAND]: 10,
-  [WALL]: 5,
-  [BELT]: 20,
-  [SELL]: 0
-};
-
-let selected = SAND;
-
-function updateUI() {
-  document.getElementById("money").textContent = money;
-  document.getElementById("sandCount").textContent = sandSold;
-}
-
-/* ---------------------------------------------------------
-   BUTTONS
-   --------------------------------------------------------- */
-
-const buttons = {
-  sandBtn: SAND,
-  wallBtn: WALL,
-  beltBtn: BELT,
-  sellBtn: SELL,
-  deleteBtn: -1
-};
-
-for (const id in buttons) {
-  document.getElementById(id).addEventListener("click", () => {
-
-    selected = buttons[id];
-
-    document
-      .querySelectorAll("button")
-      .forEach(b => b.classList.remove("selected"));
-
-    document.getElementById(id).classList.add("selected");
-  });
-}
-
-/* ---------------------------------------------------------
-   PLACEMENT
-   --------------------------------------------------------- */
-
-function placeAt(screenX, screenY) {
-
-  const x = Math.floor(screenX / CELL);
-  const y = Math.floor(screenY / CELL);
-
-  if (x < 0 || x >= cols || y < 0 || y >= rows) {
-    return;
-  }
-
-  // Don't modify floor
-  if (y >= rows - 2) return;
-
-  // Delete
-  if (selected === -1) {
-    grid[y][x] = EMPTY;
-    return;
-  }
-
-  // Can't place over sand
-  if (grid[y][x] === SAND) return;
-
-  const cost = prices[selected];
-
-  if (money < cost) return;
-
-  money -= cost;
-  grid[y][x] = selected;
-
-  updateUI();
-}
-
-/* ---------------------------------------------------------
-   TOUCH
-   --------------------------------------------------------- */
-
-canvas.addEventListener("pointerdown", e => {
-  placeAt(e.clientX, e.clientY);
-});
-
-canvas.addEventListener("pointermove", e => {
-  if (e.buttons) {
-    placeAt(e.clientX, e.clientY);
-  }
-});
-
-/* ---------------------------------------------------------
-   SAND PHYSICS
-   --------------------------------------------------------- */
-
-function inside(x, y) {
+function insideWorld(x, y) {
   return (
     x >= 0 &&
-    x < cols &&
+    x < WORLD_WIDTH &&
     y >= 0 &&
-    y < rows
+    y < WORLD_HEIGHT
   );
 }
 
-function moveSand(x, y, nx, ny) {
+function getTerrain(x, y) {
+  if (!insideWorld(x, y)) return BEDROCK;
+  return terrain[index(x, y)];
+}
 
-  if (!inside(nx, ny)) return false;
+function setTerrain(x, y, material) {
+  if (!insideWorld(x, y)) return;
+  terrain[index(x, y)] = material;
+}
 
-  if (grid[ny][nx] !== EMPTY &&
-      grid[ny][nx] !== BELT &&
-      grid[ny][nx] !== SELL) {
-    return false;
+
+/* =========================================================
+   GENERATE WORLD
+========================================================= */
+
+const surfaceY = 22;
+
+for (let y = 0; y < WORLD_HEIGHT; y++) {
+
+  for (let x = 0; x < WORLD_WIDTH; x++) {
+
+    if (y < surfaceY) {
+      setTerrain(x, y, AIR);
+    }
+
+    else if (y < surfaceY + 20) {
+      setTerrain(x, y, DIRT);
+    }
+
+    else if (y < WORLD_HEIGHT - 5) {
+      setTerrain(x, y, STONE);
+    }
+
+    else {
+      setTerrain(x, y, BEDROCK);
+    }
   }
+}
 
-  grid[ny][nx] = SAND;
-  grid[y][x] = EMPTY;
+
+/* =========================================================
+   SAND PARTICLES
+========================================================= */
+
+const sand = new Uint8Array(
+  WORLD_WIDTH * WORLD_HEIGHT
+);
+
+function hasSand(x, y) {
+  if (!insideWorld(x, y)) return false;
+  return sand[index(x, y)] !== 0;
+}
+
+function addSand(x, y) {
+  if (!insideWorld(x, y)) return false;
+
+  const i = index(x, y);
+
+  if (terrain[i] !== AIR) return false;
+  if (sand[i]) return false;
+
+  sand[i] = SAND;
+  return true;
+}
+
+function removeSand(x, y) {
+  if (!insideWorld(x, y)) return false;
+
+  const i = index(x, y);
+
+  if (!sand[i]) return false;
+
+  sand[i] = 0;
+  return true;
+}
+
+
+/* =========================================================
+   SAND PHYSICS
+========================================================= */
+
+function moveSand(x1, y1, x2, y2) {
+
+  if (!insideWorld(x2, y2)) return false;
+
+  const from = index(x1, y1);
+  const to = index(x2, y2);
+
+  if (!sand[from]) return false;
+
+  if (terrain[to] !== AIR) return false;
+  if (sand[to]) return false;
+
+  sand[to] = sand[from];
+  sand[from] = 0;
 
   return true;
 }
 
 function updateSand() {
 
-  // Bottom-to-top so sand behaves naturally.
-  for (let y = rows - 3; y >= 0; y--) {
+  /*
+    Bottom-to-top processing prevents a particle
+    from being moved repeatedly during one pass.
+  */
 
-    // Randomize direction for natural piles
+  for (let y = WORLD_HEIGHT - 2; y >= surfaceY; y--) {
+
+    /*
+      Randomize horizontal direction so piles
+      don't always lean the same way.
+    */
+
     const leftFirst = Math.random() < 0.5;
 
-    for (
-      let x = leftFirst ? 0 : cols - 1;
-      leftFirst ? x < cols : x >= 0;
-      x += leftFirst ? 1 : -1
-    ) {
+    for (let x = 1; x < WORLD_WIDTH - 1; x++) {
 
-      if (grid[y][x] !== SAND) continue;
+      if (!hasSand(x, y)) continue;
 
-      // Down
+      // Straight down
       if (moveSand(x, y, x, y + 1)) {
         continue;
       }
 
-      // Diagonal
       if (leftFirst) {
 
         if (moveSand(x, y, x - 1, y + 1)) {
@@ -396,221 +308,674 @@ function updateSand() {
   }
 }
 
-/* ---------------------------------------------------------
-   SAND GENERATOR
-   --------------------------------------------------------- */
 
-let generatorTimer = 0;
+/* =========================================================
+   INVENTORY
+========================================================= */
 
-function generateSand() {
+/*
+  IMPORTANT:
+  The player can carry exactly ONE item.
 
-  generatorTimer++;
+  Later this can become:
+  inventory = {
+    type: "sand",
+    amount: 10
+  }
 
-  if (generatorTimer < 8) return;
+  But for now, one carried material stack is enough.
+*/
 
-  generatorTimer = 0;
+const inventory = {
+  type: null,
+  amount: 0
+};
 
-  // Generate from the top starting area
-  const x = 10;
-  const y = 4;
+function updateInventoryUI() {
 
-  if (inside(x, y) && grid[y][x] === EMPTY) {
-    grid[y][x] = SAND;
+  const element = document.getElementById("inventory");
+
+  if (!inventory.type || inventory.amount <= 0) {
+    element.textContent = "Inventory: Empty";
+    return;
+  }
+
+  element.textContent =
+    "Holding: " +
+    inventory.type +
+    " × " +
+    inventory.amount;
+}
+
+
+/* =========================================================
+   CAMERA
+========================================================= */
+
+let cameraX = 0;
+let cameraY = 0;
+
+let zoom = 1;
+
+function clampCamera() {
+
+  const worldPixelW = WORLD_WIDTH * CELL;
+  const worldPixelH = WORLD_HEIGHT * CELL;
+
+  const visibleW = screenW / zoom;
+  const visibleH = screenH / zoom;
+
+  cameraX = Math.max(
+    0,
+    Math.min(cameraX, worldPixelW - visibleW)
+  );
+
+  cameraY = Math.max(
+    0,
+    Math.min(cameraY, worldPixelH - visibleH)
+  );
+}
+
+
+/* =========================================================
+   WORLD ↔ SCREEN
+========================================================= */
+
+function screenToWorld(screenX, screenY) {
+
+  const worldX =
+    cameraX + screenX / zoom;
+
+  const worldY =
+    cameraY + screenY / zoom;
+
+  return {
+    x: Math.floor(worldX / CELL),
+    y: Math.floor(worldY / CELL)
+  };
+}
+
+
+/* =========================================================
+   MINING
+========================================================= */
+
+function isExposed(x, y) {
+
+  if (!insideWorld(x, y)) return false;
+
+  /*
+    A block is exposed if at least one
+    neighboring cell is air.
+  */
+
+  return (
+    getTerrain(x + 1, y) === AIR ||
+    getTerrain(x - 1, y) === AIR ||
+    getTerrain(x, y + 1) === AIR ||
+    getTerrain(x, y - 1) === AIR
+  );
+}
+
+function mine(x, y) {
+
+  if (!insideWorld(x, y)) return;
+
+  const material = getTerrain(x, y);
+
+  if (!isExposed(x, y)) return;
+
+  if (material === DIRT) {
+
+    setTerrain(x, y, AIR);
+
+    /*
+      2 dirt blocks = 1 sand unit.
+
+      We keep a fractional conversion counter
+      so that individual blocks can be mined.
+    */
+
+    dirtConversion++;
+
+    if (dirtConversion >= DIRT_TO_SAND) {
+
+      dirtConversion -= DIRT_TO_SAND;
+
+      spawnSandNear(x, y);
+    }
+
+    return;
+  }
+
+  /*
+    Stone is mineable later, but we don't yet
+    turn it into a useful material.
+  */
+
+  if (material === STONE) {
+
+    setTerrain(x, y, AIR);
+
+    spawnStoneDust(x, y);
   }
 }
 
-/* ---------------------------------------------------------
-   SELLING
-   --------------------------------------------------------- */
+let dirtConversion = 0;
 
-function sellSand() {
 
-  for (let y = 0; y < rows; y++) {
+/* =========================================================
+   SPAWN SAND
+========================================================= */
 
-    for (let x = 0; x < cols; x++) {
+function spawnSandNear(x, y) {
 
-      if (grid[y][x] !== SELL) continue;
+  const positions = [
+    [x, y],
+    [x - 1, y],
+    [x + 1, y],
+    [x, y - 1]
+  ];
 
-      const neighbours = [
-        [x - 1, y],
-        [x + 1, y],
-        [x, y - 1],
-        [x, y + 1]
-      ];
+  for (const [px, py] of positions) {
 
-      for (const [nx, ny] of neighbours) {
+    if (addSand(px, py)) return;
+  }
+}
 
-        if (!inside(nx, ny)) continue;
 
-        if (grid[ny][nx] === SAND) {
+/* =========================================================
+   STONE DUST
+========================================================= */
 
-          grid[ny][nx] = EMPTY;
+const stoneDust = [];
 
-          money += 2;
-          sandSold++;
+function spawnStoneDust(x, y) {
 
-          updateUI();
+  for (let i = 0; i < 3; i++) {
+
+    stoneDust.push({
+      x: x * CELL + CELL / 2,
+      y: y * CELL + CELL / 2,
+      life: 20
+    });
+  }
+}
+
+function updateStoneDust() {
+
+  for (let i = stoneDust.length - 1; i >= 0; i--) {
+
+    const p = stoneDust[i];
+
+    p.y += 0.4;
+    p.life--;
+
+    if (p.life <= 0) {
+      stoneDust.splice(i, 1);
+    }
+  }
+}
+
+
+/* =========================================================
+   COLLECT SAND
+========================================================= */
+
+function collectSand(x, y) {
+
+  /*
+    Inventory only accepts one type.
+
+    This is deliberately restrictive.
+  */
+
+  if (
+    inventory.type &&
+    inventory.type !== "sand"
+  ) {
+    return false;
+  }
+
+  if (!hasSand(x, y)) {
+    return false;
+  }
+
+  removeSand(x, y);
+
+  inventory.type = "sand";
+  inventory.amount++;
+
+  updateInventoryUI();
+
+  return true;
+}
+
+
+/* =========================================================
+   DROP SAND
+========================================================= */
+
+function dropSand(x, y) {
+
+  if (inventory.type !== "sand") {
+    return false;
+  }
+
+  if (inventory.amount <= 0) {
+    return false;
+  }
+
+  /*
+    Find an available location near the tap.
+  */
+
+  for (let radius = 0; radius < 4; radius++) {
+
+    for (
+      let dy = -radius;
+      dy <= radius;
+      dy++
+    ) {
+
+      for (
+        let dx = -radius;
+        dx <= radius;
+        dx++
+      ) {
+
+        const px = x + dx;
+        const py = y + dy;
+
+        if (addSand(px, py)) {
+
+          inventory.amount--;
+
+          if (inventory.amount <= 0) {
+            inventory.type = null;
+            inventory.amount = 0;
+          }
+
+          updateInventoryUI();
+
+          return true;
         }
       }
     }
   }
+
+  return false;
 }
 
-/* ---------------------------------------------------------
-   DRAW
-   --------------------------------------------------------- */
 
-function draw() {
+/* =========================================================
+   TOUCH / MOUSE INPUT
+========================================================= */
 
-  ctx.clearRect(
-    0,
-    0,
-    window.innerWidth,
-    window.innerHeight
-  );
+let pointerDown = false;
 
-  // Background
-  ctx.fillStyle = "#182028";
-  ctx.fillRect(
-    0,
-    0,
-    window.innerWidth,
-    window.innerHeight
-  );
+let lastPointerX = 0;
+let lastPointerY = 0;
 
-  // Subtle grid
-  ctx.strokeStyle = "rgba(255,255,255,.035)";
-  ctx.lineWidth = 1;
+let dragging = false;
 
-  for (let x = 0; x < cols; x++) {
-    ctx.beginPath();
-    ctx.moveTo(x * CELL, 0);
-    ctx.lineTo(x * CELL, window.innerHeight);
-    ctx.stroke();
+canvas.addEventListener(
+  "pointerdown",
+  e => {
+
+    pointerDown = true;
+    dragging = false;
+
+    lastPointerX = e.clientX;
+    lastPointerY = e.clientY;
+
+    canvas.setPointerCapture(e.pointerId);
+  }
+);
+
+canvas.addEventListener(
+  "pointermove",
+  e => {
+
+    if (!pointerDown) return;
+
+    const dx = e.clientX - lastPointerX;
+    const dy = e.clientY - lastPointerY;
+
+    if (
+      Math.abs(dx) > 3 ||
+      Math.abs(dy) > 3
+    ) {
+      dragging = true;
+    }
+
+    if (dragging) {
+
+      cameraX -= dx / zoom;
+      cameraY -= dy / zoom;
+
+      clampCamera();
+    }
+
+    lastPointerX = e.clientX;
+    lastPointerY = e.clientY;
+  }
+);
+
+canvas.addEventListener(
+  "pointerup",
+  e => {
+
+    if (!dragging) {
+
+      handleTap(
+        e.clientX,
+        e.clientY
+      );
+    }
+
+    pointerDown = false;
+  }
+);
+
+
+/* =========================================================
+   TAP ACTION
+========================================================= */
+
+function handleTap(screenX, screenY) {
+
+  const pos =
+    screenToWorld(
+      screenX,
+      screenY
+    );
+
+  const x = pos.x;
+  const y = pos.y;
+
+  /*
+    Priority 1:
+    collect sand if tapped.
+  */
+
+  if (collectSand(x, y)) {
+    return;
   }
 
-  for (let y = 0; y < rows; y++) {
-    ctx.beginPath();
-    ctx.moveTo(0, y * CELL);
-    ctx.lineTo(window.innerWidth, y * CELL);
-    ctx.stroke();
-  }
+  /*
+    Priority 2:
+    if carrying sand, drop it.
+  */
 
-  // Cells
-  for (let y = 0; y < rows; y++) {
+  if (inventory.type === "sand") {
 
-    for (let x = 0; x < cols; x++) {
-
-      const type = grid[y][x];
-
-      if (type === EMPTY) continue;
-
-      const px = x * CELL;
-      const py = y * CELL;
-
-      if (type === SAND) {
-
-        ctx.fillStyle = "#e3b34d";
-
-        ctx.fillRect(
-          px + 1,
-          py + 1,
-          CELL - 2,
-          CELL - 2
-        );
-
-      } else if (type === WALL) {
-
-        ctx.fillStyle = "#59636d";
-
-        ctx.fillRect(
-          px,
-          py,
-          CELL,
-          CELL
-        );
-
-        ctx.strokeStyle = "#707b85";
-        ctx.strokeRect(
-          px,
-          py,
-          CELL,
-          CELL
-        );
-
-      } else if (type === BELT) {
-
-        ctx.fillStyle = "#3f7190";
-
-        ctx.fillRect(
-          px,
-          py,
-          CELL,
-          CELL
-        );
-
-        ctx.fillStyle = "#8ed4f5";
-        ctx.font = "10px Arial";
-        ctx.textAlign = "center";
-        ctx.fillText(
-          "›",
-          px + CELL / 2,
-          py + CELL - 2
-        );
-
-      } else if (type === SELL) {
-
-        ctx.fillStyle = "#2c8c5b";
-
-        ctx.fillRect(
-          px,
-          py,
-          CELL,
-          CELL
-        );
-
-        ctx.fillStyle = "#fff";
-        ctx.font = "9px Arial";
-        ctx.textAlign = "center";
-        ctx.fillText(
-          "$",
-          px + CELL / 2,
-          py + CELL - 2
-        );
-      }
+    if (dropSand(x, y)) {
+      return;
     }
   }
 
-  // Generator
-  ctx.fillStyle = "#d7a63b";
-  ctx.fillRect(8 * CELL, 2 * CELL, 5 * CELL, 2 * CELL);
+  /*
+    Priority 3:
+    otherwise attempt mining.
+  */
 
-  ctx.fillStyle = "#fff";
-  ctx.font = "bold 12px Arial";
-  ctx.textAlign = "center";
-  ctx.fillText(
-    "SAND",
-    10.5 * CELL,
-    3.3 * CELL
-  );
-
-  requestAnimationFrame(draw);
+  mine(x, y);
 }
 
-/* ---------------------------------------------------------
-   GAME LOOP
-   --------------------------------------------------------- */
 
-setInterval(() => {
+/* =========================================================
+   ZOOM
+========================================================= */
+
+let initialPinchDistance = null;
+let initialZoom = 1;
+
+canvas.addEventListener(
+  "touchstart",
+  e => {
+
+    if (e.touches.length === 2) {
+
+      initialPinchDistance =
+        distance(
+          e.touches[0],
+          e.touches[1]
+        );
+
+      initialZoom = zoom;
+    }
+  },
+  { passive: false }
+);
+
+canvas.addEventListener(
+  "touchmove",
+  e => {
+
+    if (e.touches.length === 2) {
+
+      e.preventDefault();
+
+      const currentDistance =
+        distance(
+          e.touches[0],
+          e.touches[1]
+        );
+
+      if (initialPinchDistance) {
+
+        zoom =
+          initialZoom *
+          (currentDistance / initialPinchDistance);
+
+        zoom =
+          Math.max(
+            0.7,
+            Math.min(3, zoom)
+          );
+
+        clampCamera();
+      }
+    }
+  },
+  { passive: false }
+);
+
+function distance(a, b) {
+
+  const dx = a.clientX - b.clientX;
+  const dy = a.clientY - b.clientY;
+
+  return Math.sqrt(
+    dx * dx + dy * dy
+  );
+}
+
+
+/* =========================================================
+   RENDER
+========================================================= */
+
+function render() {
+
+  ctx.fillStyle = "#78c8f5";
+
+  ctx.fillRect(
+    0,
+    0,
+    screenW,
+    screenH
+  );
+
+  ctx.save();
+
+  ctx.scale(zoom, zoom);
+
+  ctx.translate(
+    -cameraX,
+    -cameraY
+  );
+
+  /*
+    Visible world region
+  */
+
+  const startX =
+    Math.floor(cameraX / CELL);
+
+  const startY =
+    Math.floor(cameraY / CELL);
+
+  const endX =
+    Math.ceil(
+      (cameraX + screenW / zoom) / CELL
+    );
+
+  const endY =
+    Math.ceil(
+      (cameraY + screenH / zoom) / CELL
+    );
+
+
+  /* TERRAIN */
+
+  for (
+    let y = Math.max(0, startY);
+    y < Math.min(WORLD_HEIGHT, endY);
+    y++
+  ) {
+
+    for (
+      let x = Math.max(0, startX);
+      x < Math.min(WORLD_WIDTH, endX);
+      x++
+    ) {
+
+      const material =
+        getTerrain(x, y);
+
+      if (material === AIR) continue;
+
+      if (material === DIRT) {
+
+        ctx.fillStyle = "#9b6b43";
+
+      } else if (material === STONE) {
+
+        ctx.fillStyle = "#666b72";
+
+      } else if (material === BEDROCK) {
+
+        ctx.fillStyle = "#25282c";
+      }
+
+      ctx.fillRect(
+        x * CELL,
+        y * CELL,
+        CELL,
+        CELL
+      );
+    }
+  }
+
+
+  /* SAND */
+
+  ctx.fillStyle = "#e6c15a";
+
+  for (
+    let y = Math.max(surfaceY, startY);
+    y < Math.min(WORLD_HEIGHT, endY);
+    y++
+  ) {
+
+    for (
+      let x = Math.max(0, startX);
+      x < Math.min(WORLD_WIDTH, endX);
+      x++
+    ) {
+
+      if (!hasSand(x, y)) continue;
+
+      ctx.fillRect(
+        x * CELL + 2,
+        y * CELL + 2,
+        CELL - 3,
+        CELL - 3
+      );
+    }
+  }
+
+
+  /* STONE DUST */
+
+  for (const p of stoneDust) {
+
+    ctx.fillStyle =
+      `rgba(180,180,180,${p.life / 20})`;
+
+    ctx.fillRect(
+      p.x,
+      p.y,
+      3,
+      3
+    );
+  }
+
+
+  /* SURFACE LINE */
+
+  ctx.fillStyle = "#5aa33b";
+
+  ctx.fillRect(
+    0,
+    surfaceY * CELL - 3,
+    WORLD_WIDTH * CELL,
+    3
+  );
+
+
+  ctx.restore();
+}
+
+
+/* =========================================================
+   GAME LOOP
+========================================================= */
+
+let lastTime = 0;
+
+function gameLoop(time) {
+
+  const delta =
+    time - lastTime;
+
+  lastTime = time;
+
+  /*
+    Keep simulation stable regardless
+    of phone frame rate.
+  */
 
   updateSand();
-  generateSand();
-  sellSand();
+  updateSand();
 
-}, 50);
+  updateStoneDust();
 
-updateUI();
-draw();
+  render();
+
+  requestAnimationFrame(gameLoop);
+}
+
+
+/* =========================================================
+   START
+========================================================= */
+
+updateInventoryUI();
+
+requestAnimationFrame(gameLoop);
 
 </script>
 
