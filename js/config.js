@@ -29,7 +29,7 @@ export const MAX_SAND = 10000;
 /*
  * Tiny but clearly visible grains.
  */
-export const SAND_GRAIN_SIZE = 1.5;
+export const SAND_GRAIN_SIZE = 1;
 
 /*
  * Slightly stronger gravity so freshly mined/dropped
