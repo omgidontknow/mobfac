@@ -14,11 +14,6 @@
 <title>Sandworks</title>
 
 <style>
-
-/* =========================================================
-   RESET
-========================================================= */
-
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
@@ -46,11 +41,6 @@ body {
     sans-serif;
 }
 
-
-/* =========================================================
-   GAME CANVAS
-========================================================= */
-
 #game {
   display: block;
 
@@ -60,9 +50,8 @@ body {
   image-rendering: pixelated;
 }
 
-
 /* =========================================================
-   UI
+   TOP UI
 ========================================================= */
 
 #ui {
@@ -75,8 +64,11 @@ body {
   display: flex;
 
   justify-content: space-between;
+  align-items: flex-start;
 
   pointer-events: none;
+
+  z-index: 10;
 }
 
 .panel {
@@ -105,32 +97,206 @@ body {
 }
 
 
+/* =========================================================
+   ACTION BAR
+========================================================= */
+
+#actions {
+  position: fixed;
+
+  left: 50%;
+  bottom: 20px;
+
+  transform: translateX(-50%);
+
+  display: flex;
+
+  gap: 7px;
+
+  padding: 7px;
+
+  background:
+    rgba(25, 29, 32, .86);
+
+  border:
+    1px solid
+    rgba(255,255,255,.2);
+
+  border-radius: 15px;
+
+  box-shadow:
+    0 5px 20px
+    rgba(0,0,0,.25);
+
+  backdrop-filter:
+    blur(7px);
+
+  z-index: 20;
+}
+
+
+.action {
+  border: 0;
+
+  min-width: 62px;
+  height: 54px;
+
+  border-radius: 11px;
+
+  background:
+    rgba(255,255,255,.09);
+
+  color:
+    rgba(255,255,255,.82);
+
+  font-size: 12px;
+
+  font-weight: 600;
+
+  cursor: pointer;
+
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: center;
+
+  justify-content: center;
+
+  gap: 2px;
+
+  touch-action: manipulation;
+
+  transition:
+    background .12s,
+    transform .12s,
+    color .12s;
+}
+
+
+.action .icon {
+  font-size: 21px;
+
+  line-height: 21px;
+}
+
+
+.action:active {
+  transform:
+    scale(.94);
+}
+
+
+.action.selected {
+  background:
+    #e2ad3d;
+
+  color:
+    #27200f;
+
+  box-shadow:
+    0 0 0 2px
+    rgba(255,215,105,.28),
+    0 3px 10px
+    rgba(0,0,0,.25);
+}
+
+
+/* =========================================================
+   HINT
+========================================================= */
+
 #hint {
   position: fixed;
 
-  bottom: 12px;
   left: 50%;
+
+  bottom: 86px;
 
   transform:
     translateX(-50%);
 
   background:
-    rgba(25,29,32,.82);
+    rgba(25,29,32,.75);
 
-  color: white;
+  color:
+    rgba(255,255,255,.9);
 
   padding:
-    8px 12px;
+    6px 10px;
 
-  border-radius: 10px;
+  border-radius:
+    8px;
 
-  font-size: 12px;
+  font-size:
+    11px;
 
-  white-space: nowrap;
+  white-space:
+    nowrap;
 
-  pointer-events: none;
+  pointer-events:
+    none;
 
-  opacity: .9;
+  z-index:
+    10;
+
+  opacity:
+    .9;
+}
+
+
+/* =========================================================
+   VERSION
+========================================================= */
+
+#version {
+  position: fixed;
+
+  right: 7px;
+  bottom: 5px;
+
+  color:
+    rgba(255,255,255,.38);
+
+  font-size:
+    9px;
+
+  font-family:
+    monospace;
+
+  pointer-events:
+    none;
+
+  user-select:
+    none;
+
+  z-index:
+    30;
+}
+
+
+/* =========================================================
+   MOBILE
+========================================================= */
+
+@media (max-width: 430px) {
+
+  #actions {
+    bottom: 15px;
+
+    gap: 5px;
+
+    padding: 6px;
+  }
+
+  .action {
+    min-width: 59px;
+    height: 52px;
+  }
+
+  #hint {
+    bottom: 79px;
+  }
 }
 
 </style>
@@ -141,6 +307,10 @@ body {
 
 <canvas id="game"></canvas>
 
+
+<!-- =======================================================
+     TOP UI
+======================================================= -->
 
 <div id="ui">
 
@@ -158,8 +328,61 @@ body {
 </div>
 
 
+<!-- =======================================================
+     ACTION BAR
+======================================================= -->
+
+<div id="actions">
+
+  <button
+    class="action selected"
+    data-mode="mine"
+    type="button"
+  >
+    <span class="icon">⛏</span>
+    <span>Mine</span>
+  </button>
+
+
+  <button
+    class="action"
+    data-mode="collect"
+    type="button"
+  >
+    <span class="icon">✋</span>
+    <span>Collect</span>
+  </button>
+
+
+  <button
+    class="action"
+    data-mode="drop"
+    type="button"
+  >
+    <span class="icon">▼</span>
+    <span>Drop</span>
+  </button>
+
+
+  <button
+    class="action"
+    data-mode="pan"
+    type="button"
+  >
+    <span class="icon">✥</span>
+    <span>Pan</span>
+  </button>
+
+</div>
+
+
 <div id="hint">
-  Tap ground to mine • Tap sand to collect • Tap again to drop
+  Mine exposed ground
+</div>
+
+
+<div id="version">
+  v0.2.0
 </div>
 
 
@@ -172,39 +395,19 @@ body {
    CONFIGURATION
 ========================================================= */
 
+const VERSION = "v0.2.0";
+
 const CELL = 12;
 
 const WORLD_WIDTH = 140;
 
 const WORLD_HEIGHT = 200;
 
-
-/*
-  Every two dirt blocks produces sand.
-*/
-
 const DIRT_TO_SAND = 2;
-
-
-/*
-  Circular mining radius.
-*/
 
 const MINING_RADIUS = 2.25;
 
-
-/*
-  Maximum loose sand particles.
-
-  This prevents a phone from being overwhelmed.
-*/
-
 const MAX_SAND_PARTICLES = 7000;
-
-
-/*
-  Player inventory capacity.
-*/
 
 const INVENTORY_CAPACITY = 25;
 
@@ -220,7 +423,6 @@ const ctx =
   canvas.getContext("2d");
 
 ctx.imageSmoothingEnabled = false;
-
 
 let screenW = 0;
 let screenH = 0;
@@ -269,13 +471,6 @@ const terrain =
     WORLD_HEIGHT
   );
 
-
-/*
-  Grass is attached to the surface.
-
-  It is not a separate floating line.
-*/
-
 const grass =
   new Uint8Array(
     WORLD_WIDTH *
@@ -309,6 +504,7 @@ function getTerrain(x, y) {
   if (
     !insideWorld(x, y)
   ) {
+
     return BEDROCK;
   }
 
@@ -413,9 +609,7 @@ for (
         AIR
       );
 
-    }
-
-    else if (
+    } else if (
       y < surface + 22
     ) {
 
@@ -425,9 +619,7 @@ for (
         DIRT
       );
 
-    }
-
-    else if (
+    } else if (
       y <
       WORLD_HEIGHT - 7
     ) {
@@ -438,9 +630,7 @@ for (
         STONE
       );
 
-    }
-
-    else {
+    } else {
 
       setTerrain(
         x,
@@ -450,11 +640,6 @@ for (
     }
   }
 
-
-  /*
-    Grass only belongs on
-    the exposed surface.
-  */
 
   if (
     getTerrain(
@@ -473,18 +658,6 @@ for (
 /* =========================================================
    SAND PARTICLES
 ========================================================= */
-
-
-/*
-  IMPORTANT:
-
-  Terrain uses a grid.
-
-  Sand does NOT.
-
-  Every grain has a continuous
-  pixel position.
-*/
 
 const sandParticles = [];
 
@@ -505,6 +678,7 @@ function spawnSand(
       sandParticles.length >=
       MAX_SAND_PARTICLES
     ) {
+
       return;
     }
 
@@ -615,10 +789,6 @@ function canSandMove(
 
 function updateSand() {
 
-  /*
-    Bottom-first processing.
-  */
-
   sandParticles.sort(
     (a, b) =>
       b.y - a.y
@@ -629,16 +799,7 @@ function updateSand() {
     const p of sandParticles
   ) {
 
-    /*
-      Gravity.
-    */
-
     p.vy += .17;
-
-
-    /*
-      Terminal velocity.
-    */
 
     p.vy =
       Math.min(
@@ -646,18 +807,8 @@ function updateSand() {
         4.5
       );
 
-
-    /*
-      Small amount of horizontal
-      friction.
-    */
-
     p.vx *= .965;
 
-
-    /*
-      Try falling.
-    */
 
     const nextX =
       p.x + p.vx;
@@ -684,21 +835,8 @@ function updateSand() {
     }
 
 
-    /*
-      We hit the ground.
-
-      Kill most vertical velocity.
-    */
-
     p.vy *= -.08;
 
-
-    /*
-      Attempt granular sliding.
-
-      A tiny amount of randomness prevents
-      perfectly symmetrical piles.
-    */
 
     const slide =
       .45 +
@@ -737,34 +875,20 @@ function updateSand() {
         p.x += slide;
       }
 
-    }
-
-    else if (left) {
+    } else if (left) {
 
       p.x -= slide;
 
-    }
-
-    else if (right) {
+    } else if (right) {
 
       p.x += slide;
 
-    }
-
-    else {
-
-      /*
-        Fully settled.
-      */
+    } else {
 
       p.vx = 0;
       p.vy = 0;
     }
 
-
-    /*
-      Keep inside world.
-    */
 
     p.x =
       Math.max(
@@ -823,6 +947,80 @@ function updateInventoryUI() {
 
 
 /* =========================================================
+   ACTION MODES
+========================================================= */
+
+let currentMode =
+  "mine";
+
+
+const hints = {
+
+  mine:
+    "Mine exposed ground",
+
+  collect:
+    "Collect loose sand",
+
+  drop:
+    "Drop held material",
+
+  pan:
+    "Drag to move around the map"
+};
+
+
+const actionButtons =
+  document.querySelectorAll(
+    ".action"
+  );
+
+
+actionButtons.forEach(
+  button => {
+
+    button.addEventListener(
+      "click",
+      event => {
+
+        event.preventDefault();
+
+        setMode(
+          button.dataset.mode
+        );
+      }
+    );
+  }
+);
+
+
+function setMode(
+  mode
+) {
+
+  currentMode =
+    mode;
+
+
+  actionButtons.forEach(
+    button => {
+
+      button.classList.toggle(
+        "selected",
+        button.dataset.mode === mode
+      );
+    }
+  );
+
+
+  document.getElementById(
+    "hint"
+  ).textContent =
+    hints[mode];
+}
+
+
+/* =========================================================
    MINING
 ========================================================= */
 
@@ -869,14 +1067,6 @@ function isExposed(
   );
 }
 
-
-/*
-  Mine an entire circular area.
-
-  This is still cell-based underneath,
-  but the circular boundary makes
-  excavation much more natural.
-*/
 
 function mineCircular(
   centerX,
@@ -965,10 +1155,6 @@ function mineCircular(
 }
 
 
-/* =========================================================
-   MINE SINGLE BLOCK
-========================================================= */
-
 function mineBlock(
   x,
   y
@@ -998,10 +1184,6 @@ function mineBlock(
   }
 
 
-  /* =====================================================
-     DIRT
-  ===================================================== */
-
   if (
     material === DIRT
   ) {
@@ -1020,10 +1202,6 @@ function mineBlock(
 
     dirtConversion++;
 
-
-    /*
-      2 dirt → a burst of sand.
-    */
 
     if (
       dirtConversion >=
@@ -1045,10 +1223,6 @@ function mineBlock(
     return;
   }
 
-
-  /* =====================================================
-     STONE
-  ===================================================== */
 
   if (
     material === STONE
@@ -1080,14 +1254,6 @@ function mineBlock(
 
 function refreshGrass() {
 
-  /*
-    Clear all grass and regenerate only
-    where dirt is directly exposed to air.
-
-    This means the grass layer follows
-    excavation automatically.
-  */
-
   grass.fill(0);
 
 
@@ -1109,6 +1275,7 @@ function refreshGrass() {
           y
         ) !== DIRT
       ) {
+
         continue;
       }
 
@@ -1253,11 +1420,8 @@ function collectSand(
     CELL / 2;
 
 
-  /*
-    Search for a nearby grain.
-  */
-
-  let closest = -1;
+  let closest =
+    -1;
 
   let closestDistance =
     Infinity;
@@ -1300,10 +1464,6 @@ function collectSand(
     }
   }
 
-
-  /*
-    Collection radius.
-  */
 
   if (
     closest === -1 ||
@@ -1446,10 +1606,6 @@ function clampCamera() {
 }
 
 
-/* =========================================================
-   SCREEN → WORLD
-========================================================= */
-
 function screenToWorld(
   screenX,
   screenY
@@ -1457,25 +1613,27 @@ function screenToWorld(
 
   return {
 
-    x: Math.floor(
-      (
-        cameraX +
-        screenX / zoom
-      ) / CELL
-    ),
+    x:
+      Math.floor(
+        (
+          cameraX +
+          screenX / zoom
+        ) / CELL
+      ),
 
-    y: Math.floor(
-      (
-        cameraY +
-        screenY / zoom
-      ) / CELL
-    )
+    y:
+      Math.floor(
+        (
+          cameraY +
+          screenY / zoom
+        ) / CELL
+      )
   };
 }
 
 
 /* =========================================================
-   INPUT
+   POINTER INPUT
 ========================================================= */
 
 let pointerDown =
@@ -1523,6 +1681,7 @@ canvas.addEventListener(
     if (
       !pointerDown
     ) {
+
       return;
     }
 
@@ -1546,7 +1705,15 @@ canvas.addEventListener(
     }
 
 
+    /*
+      Only Pan mode moves the camera.
+
+      This means accidental finger movement while
+      mining/collecting won't drag the world.
+    */
+
     if (
+      currentMode === "pan" &&
       dragging
     ) {
 
@@ -1574,11 +1741,18 @@ canvas.addEventListener(
   "pointerup",
   e => {
 
+    /*
+      Pan mode uses dragging.
+
+      Other modes use taps.
+    */
+
     if (
+      currentMode !== "pan" &&
       !dragging
     ) {
 
-      handleTap(
+      handleActionTap(
         e.clientX,
         e.clientY
       );
@@ -1587,15 +1761,18 @@ canvas.addEventListener(
 
     pointerDown =
       false;
+
+    dragging =
+      false;
   }
 );
 
 
 /* =========================================================
-   TAP
+   ACTION TAP
 ========================================================= */
 
-function handleTap(
+function handleActionTap(
   screenX,
   screenY
 ) {
@@ -1607,50 +1784,39 @@ function handleTap(
     );
 
 
-  /*
-    Try collecting sand first.
-  */
-
-  if (
-    collectSand(
-      pos.x,
-      pos.y
-    )
+  switch (
+    currentMode
   ) {
 
-    return;
-  }
+    case "mine":
+
+      mineCircular(
+        pos.x,
+        pos.y
+      );
+
+      break;
 
 
-  /*
-    If carrying sand, tapping the world
-    drops a small pile.
-  */
+    case "collect":
 
-  if (
-    inventory.type === "sand"
-  ) {
+      collectSand(
+        pos.x,
+        pos.y
+      );
 
-    if (
+      break;
+
+
+    case "drop":
+
       dropSand(
         pos.x,
         pos.y
-      )
-    ) {
+      );
 
-      return;
-    }
+      break;
   }
-
-
-  /*
-    Otherwise mine.
-  */
-
-  mineCircular(
-    pos.x,
-    pos.y
-  );
 }
 
 
@@ -1765,10 +1931,6 @@ function distance(
 ========================================================= */
 
 function render() {
-
-  /*
-    SKY GRADIENT
-  */
 
   const sky =
     ctx.createLinearGradient(
@@ -1904,10 +2066,6 @@ function render() {
         y * CELL;
 
 
-      /* ===================================================
-         DIRT
-      =================================================== */
-
       if (
         material === DIRT
       ) {
@@ -1923,10 +2081,6 @@ function render() {
           CELL
         );
 
-
-        /*
-          Deterministic texture.
-        */
 
         const seed =
           (
@@ -1986,10 +2140,6 @@ function render() {
         }
 
 
-        /*
-          Grass follows the surface.
-        */
-
         if (
           grass[
             index(x, y)
@@ -2007,10 +2157,6 @@ function render() {
             3
           );
 
-
-          /*
-            Grass variation.
-          */
 
           if (
             seed % 3 === 0
@@ -2045,14 +2191,8 @@ function render() {
             );
           }
         }
-      }
 
-
-      /* ===================================================
-         STONE
-      =================================================== */
-
-      else if (
+      } else if (
         material === STONE
       ) {
 
@@ -2124,14 +2264,8 @@ function render() {
             1
           );
         }
-      }
 
-
-      /* ===================================================
-         BEDROCK
-      =================================================== */
-
-      else if (
+      } else if (
         material === BEDROCK
       ) {
 
@@ -2175,16 +2309,12 @@ function render() {
 
 
   /* =======================================================
-     SAND PARTICLES
+     SAND
   ======================================================= */
 
   for (
     const p of sandParticles
   ) {
-
-    /*
-      Camera culling.
-    */
 
     if (
       p.x <
@@ -2264,21 +2394,13 @@ function render() {
 
 function gameLoop() {
 
-  /*
-    Two physics passes makes sand
-    settle more responsively.
-  */
-
   updateSand();
 
   updateSand();
-
 
   updateStoneDust();
 
-
   render();
-
 
   requestAnimationFrame(
     gameLoop
@@ -2292,6 +2414,7 @@ function gameLoop() {
 
 updateInventoryUI();
 
+setMode("mine");
 
 requestAnimationFrame(
   gameLoop
