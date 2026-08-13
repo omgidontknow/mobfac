@@ -1,4 +1,4 @@
-export const VERSION = "v0.7.0";
+export const VERSION = "v0.7.1";
 
 
 /* WORLD */
@@ -26,11 +26,18 @@ export const MINING_RADIUS = 2.7;
 
 export const MAX_SAND = 10000;
 
-export const SAND_GRAIN_SIZE = 0.72;
+/*
+ * Tiny but clearly visible grains.
+ */
+export const SAND_GRAIN_SIZE = 0.85;
 
-export const SAND_GRAVITY = 0.28;
+/*
+ * Slightly stronger gravity so freshly mined/dropped
+ * sand begins falling immediately.
+ */
+export const SAND_GRAVITY = 0.38;
 
-export const SAND_MAX_FALL_SPEED = 5;
+export const SAND_MAX_FALL_SPEED = 6;
 
 
 /* INVENTORY */
