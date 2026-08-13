@@ -15,66 +15,50 @@ import {
 } from "./sand.js";
 
 
-export function createCamera(
-    canvas
-) {
+export function createCamera(canvas) {
 
     return {
 
         x: 0,
-
         y: 0,
-
         zoom: 1,
-
         cell: CELL,
 
         clamp() {
 
             const worldW =
-                WORLD_WIDTH *
-                CELL;
+                WORLD_WIDTH * CELL;
 
             const worldH =
-                WORLD_HEIGHT *
-                CELL;
-
+                WORLD_HEIGHT * CELL;
 
             const visibleW =
-                canvas.width /
-                this.zoom;
+                canvas.width / this.zoom;
 
             const visibleH =
-                canvas.height /
-                this.zoom;
+                canvas.height / this.zoom;
 
-
-            this.x =
-                Math.max(
-                    0,
-                    Math.min(
-                        this.x,
-                        Math.max(
-                            0,
-                            worldW -
-                            visibleW
-                        )
+            this.x = Math.max(
+                0,
+                Math.min(
+                    this.x,
+                    Math.max(
+                        0,
+                        worldW - visibleW
                     )
-                );
+                )
+            );
 
-
-            this.y =
-                Math.max(
-                    0,
-                    Math.min(
-                        this.y,
-                        Math.max(
-                            0,
-                            worldH -
-                            visibleH
-                        )
+            this.y = Math.max(
+                0,
+                Math.min(
+                    this.y,
+                    Math.max(
+                        0,
+                        worldH - visibleH
                     )
-                );
+                )
+            );
         }
     };
 }
@@ -91,21 +75,17 @@ export function render(
         ctx
     );
 
-
     ctx.save();
-
 
     ctx.scale(
         camera.zoom,
         camera.zoom
     );
 
-
     ctx.translate(
         -camera.x,
         -camera.y
     );
-
 
     renderTerrain(
         canvas,
@@ -113,19 +93,19 @@ export function render(
         camera
     );
 
-
     renderSand(
         canvas,
         ctx,
         camera
     );
 
-
     ctx.restore();
 }
 
 
-/* SKY */
+/* =========================================================
+   SKY
+========================================================= */
 
 function renderSky(
     canvas,
@@ -139,7 +119,6 @@ function renderSky(
             0,
             canvas.height
         );
-
 
     gradient.addColorStop(
         0,
@@ -156,10 +135,8 @@ function renderSky(
         "#c6e5ef"
     );
 
-
     ctx.fillStyle =
         gradient;
-
 
     ctx.fillRect(
         0,
@@ -170,12 +147,11 @@ function renderSky(
 
 
     /*
-    Subtle non-repeating cloud-like texture.
-    */
+     * Very subtle irregular sky texture.
+     * No repeating pattern.
+     */
 
-    ctx.globalAlpha =
-        0.035;
-
+    ctx.globalAlpha = 0.025;
 
     for (
         let i = 0;
@@ -197,7 +173,6 @@ function renderSky(
             noise(i, 6000) *
             70;
 
-
         const glow =
             ctx.createRadialGradient(
                 x,
@@ -207,7 +182,6 @@ function renderSky(
                 y,
                 radius
             );
-
 
         glow.addColorStop(
             0,
@@ -219,10 +193,8 @@ function renderSky(
             "rgba(255,255,255,0)"
         );
 
-
         ctx.fillStyle =
             glow;
-
 
         ctx.beginPath();
 
@@ -237,13 +209,13 @@ function renderSky(
         ctx.fill();
     }
 
-
-    ctx.globalAlpha =
-        1;
+    ctx.globalAlpha = 1;
 }
 
 
-/* TERRAIN */
+/* =========================================================
+   TERRAIN
+========================================================= */
 
 function renderTerrain(
     canvas,
@@ -259,7 +231,6 @@ function renderTerrain(
             ) - 2
         );
 
-
     const endX =
         Math.min(
             WORLD_WIDTH - 1,
@@ -274,8 +245,8 @@ function renderTerrain(
 
 
     /*
-    Main terrain body.
-    */
+     * Draw the actual terrain.
+     */
 
     for (
         let x = startX;
@@ -295,11 +266,9 @@ function renderTerrain(
                     y
                 );
 
-
             if (!material) {
                 continue;
             }
-
 
             ctx.fillStyle =
                 materialColour(
@@ -307,7 +276,6 @@ function renderTerrain(
                     x,
                     y
                 );
-
 
             ctx.fillRect(
                 x * CELL,
@@ -320,123 +288,40 @@ function renderTerrain(
 
 
     /*
-    Current terrain surface.
+     * Grass is NOT a filled shape anymore.
+     *
+     * We draw it column-by-column directly on the
+     * CURRENT exposed surface.
+     *
+     * This means:
+     *
+     *   dirt
+     *   dirt
+     *   dirt
+     *   grass ← only here
+     *   sky
+     *
+     * If the dirt underneath is mined, findSurfaceY()
+     * changes and the grass moves/disappears naturally.
+     */
 
-    There is deliberately NO old surface array here.
-    */
-
-    const points = [];
-
-
-    for (
-        let x = startX;
-        x <= endX;
-        x++
-    ) {
-
-        points.push({
-
-            x:
-                x * CELL,
-
-            y:
-                findSurfaceY(x) *
-                CELL
-        });
-    }
-
-
-    /*
-    Soft top surface.
-    */
-
-    if (
-        points.length > 1
-    ) {
-
-        ctx.beginPath();
+    renderGrass(
+        ctx,
+        startX,
+        endX
+    );
+}
 
 
-        ctx.moveTo(
-            points[0].x,
-            points[0].y
-        );
+/* =========================================================
+   GRASS
+========================================================= */
 
-
-        for (
-            let i = 1;
-            i < points.length;
-            i++
-        ) {
-
-            const previous =
-                points[i - 1];
-
-            const current =
-                points[i];
-
-
-            const midX =
-                (
-                    previous.x +
-                    current.x
-                ) / 2;
-
-            const midY =
-                (
-                    previous.y +
-                    current.y
-                ) / 2;
-
-
-            ctx.quadraticCurveTo(
-                previous.x,
-                previous.y,
-                midX,
-                midY
-            );
-        }
-
-
-        const last =
-            points[
-                points.length - 1
-            ];
-
-
-        ctx.lineTo(
-            last.x,
-            last.y + 5
-        );
-
-
-        ctx.lineTo(
-            points[0].x,
-            points[0].y + 5
-        );
-
-
-        ctx.closePath();
-
-
-        ctx.fillStyle =
-            "#4f7f38";
-
-        ctx.globalAlpha =
-            0.8;
-
-        ctx.fill();
-
-        ctx.globalAlpha =
-            1;
-    }
-
-
-    /*
-    Dynamic grass.
-
-    Only appears where the CURRENT surface is dirt.
-    */
+function renderGrass(
+    ctx,
+    startX,
+    endX
+) {
 
     for (
         let x = startX;
@@ -444,31 +329,45 @@ function renderTerrain(
         x++
     ) {
 
-        const surface =
+        const surfaceY =
             findSurfaceY(x);
 
 
         if (
-            surface >=
+            surfaceY >=
             WORLD_HEIGHT
         ) {
             continue;
         }
 
 
-        const material =
-            getTerrain(
-                x,
-                surface
-            );
-
+        /*
+         * Grass only exists if the actual exposed
+         * material is dirt.
+         */
 
         if (
-            material !== 1
+            getTerrain(
+                x,
+                surfaceY
+            ) !== 1
         ) {
             continue;
         }
 
+
+        const baseX =
+            x * CELL;
+
+        const baseY =
+            surfaceY * CELL;
+
+
+        /*
+         * A very thin, slightly irregular green edge.
+         *
+         * No fill between neighbouring columns.
+         */
 
         const n =
             noise(
@@ -477,37 +376,85 @@ function renderTerrain(
             );
 
 
+        /*
+         * Dark green underside.
+         */
+
+        ctx.fillStyle =
+            "#4d7835";
+
+        ctx.fillRect(
+            baseX,
+            baseY,
+            CELL + 0.5,
+            1.8
+        );
+
+
+        /*
+         * Small individual grass variation.
+         * This avoids the perfectly straight "green bar"
+         * look while keeping it a thin surface layer.
+         */
+
         ctx.strokeStyle =
             n > 0.5
-                ? "#6da247"
-                : "#5a8f3d";
-
+                ? "#6f9d47"
+                : "#608d3e";
 
         ctx.lineWidth =
-            1.5;
+            1;
 
 
         ctx.beginPath();
 
+
         ctx.moveTo(
-            x * CELL,
-            surface * CELL + 1
+            baseX,
+            baseY + 0.8
         );
 
-        ctx.lineTo(
-            x * CELL +
-            CELL * 0.45,
-            surface * CELL -
-            (
-                1 +
-                n * 2
-            )
-        );
+
+        /*
+         * Only occasional blades.
+         */
+
+        if (n > 0.25) {
+
+            ctx.moveTo(
+                baseX + 2,
+                baseY + 1
+            );
+
+            ctx.lineTo(
+                baseX + 2.5,
+                baseY - 1.5 - n * 2
+            );
+        }
+
+
+        if (n > 0.55) {
+
+            ctx.moveTo(
+                baseX + 6,
+                baseY + 1
+            );
+
+            ctx.lineTo(
+                baseX + 5.5,
+                baseY - 1 - n * 2
+            );
+        }
+
 
         ctx.stroke();
     }
 }
 
+
+/* =========================================================
+   MATERIAL COLOURS
+========================================================= */
 
 function materialColour(
     material,
@@ -522,6 +469,10 @@ function materialColour(
         );
 
 
+    /*
+     * DIRT
+     */
+
     if (
         material === 1
     ) {
@@ -534,13 +485,16 @@ function materialColour(
     }
 
 
+    /*
+     * STONE
+     */
+
     if (
         material === 2
     ) {
 
         const value =
             83 + n * 18;
-
 
         return `rgb(
             ${value},
@@ -550,11 +504,17 @@ function materialColour(
     }
 
 
+    /*
+     * BEDROCK
+     */
+
     return "#292b2d";
 }
 
 
-/* SAND */
+/* =========================================================
+   SAND
+========================================================= */
 
 function renderSand(
     canvas,
@@ -563,8 +523,8 @@ function renderSand(
 ) {
 
     /*
-    Tiny individual grains.
-    */
+     * Tiny individual grains.
+     */
 
     for (
         const p of sand
@@ -593,7 +553,6 @@ function renderSand(
         ctx.fillStyle =
             "#dfb95b";
 
-
         ctx.beginPath();
 
         ctx.arc(
@@ -609,11 +568,9 @@ function renderSand(
 
 
     /*
-    Soft density shading.
-
-    This makes piles visibly pronounced without turning
-    the grains into large squares.
-    */
+     * Gentle density shading gives piles volume
+     * without making the sand look like a grid.
+     */
 
     const cells =
         new Map();
@@ -704,7 +661,6 @@ function renderSand(
 
         ctx.fillStyle =
             gradient;
-
 
         ctx.beginPath();
 
